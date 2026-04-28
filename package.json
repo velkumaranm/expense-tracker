@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "node scripts/dev-full.mjs",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "proxy": "node server/ai-proxy.mjs"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
