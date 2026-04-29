@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { auth } from "../firebase";
 import {
   sendPasswordResetEmail,
@@ -6,7 +6,7 @@ import {
   signInWithPhoneNumber,
 } from "firebase/auth";
 
-export default function LoginPage({ onLogin, onSignup, onGoogle }) {
+export default function LoginPage({ onLogin, onSignup, onGoogle, onApple }) {
   const [authTab, setAuthTab] = useState("email");
   const [signTab, setSignTab] = useState("signin");
   const [email, setEmail] = useState("");
@@ -20,6 +20,34 @@ export default function LoginPage({ onLogin, onSignup, onGoogle }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
+
+  useEffect(() => {
+    if (authTab !== "phone" || step !== "phone") return undefined;
+
+    const setup = async () => {
+      try {
+        if (window._rcv) {
+          try { window._rcv.clear(); } catch {}
+          window._rcv = null;
+        }
+        window._rcv = new RecaptchaVerifier(auth, "phone-recaptcha", {
+          size: "normal",
+        });
+        await window._rcv.render();
+      } catch (e) {
+        setErr(e.message?.replace("Firebase: ", "") || "Could not load reCAPTCHA");
+      }
+    };
+
+    setup();
+
+    return () => {
+      if (window._rcv) {
+        try { window._rcv.clear(); } catch {}
+        window._rcv = null;
+      }
+    };
+  }, [authTab, step]);
 
   const handleEmail = async () => {
     if (!email || !password) return;
@@ -57,11 +85,10 @@ export default function LoginPage({ onLogin, onSignup, onGoogle }) {
     setErr("");
     setLoading(true);
     try {
-      if (window._rcv) {
-        window._rcv.clear();
-        window._rcv = null;
+      if (!window._rcv) {
+        window._rcv = new RecaptchaVerifier(auth, "phone-recaptcha", { size: "normal" });
+        await window._rcv.render();
       }
-      window._rcv = new RecaptchaVerifier(auth, "rcv-container", { size: "invisible" });
       const result = await signInWithPhoneNumber(auth, `+91${phone}`, window._rcv);
       setConf(result);
       setStep("otp");
@@ -123,7 +150,6 @@ export default function LoginPage({ onLogin, onSignup, onGoogle }) {
 
   return (
     <div className="login-page">
-      <div id="rcv-container" />
       <div className="login-bg" />
       <div className="login-card">
         <div className="login-logo">◈ Finwise</div>
@@ -154,6 +180,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle }) {
             </button>
             <div className="divider">or</div>
             <button className="google-btn" onClick={onGoogle}>Continue with Google</button>
+            <button className="google-btn" style={{ marginTop: 10 }} onClick={onApple}>Continue with Apple</button>
           </>
         ) : step === "phone" ? (
           <>
@@ -164,6 +191,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle }) {
                 <input className="phone-inp" type="tel" placeholder="9876543210" maxLength={10} value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} />
               </div>
             </div>
+            <div id="phone-recaptcha" style={{ marginBottom: 14 }} />
             <button className="btn-primary" onClick={sendOTP} disabled={loading}>
               {loading ? "Sending…" : "Send OTP"}
             </button>

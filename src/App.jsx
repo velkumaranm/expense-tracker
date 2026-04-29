@@ -6,6 +6,9 @@ import {
   signOut,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  OAuthProvider,
 } from "firebase/auth";
 import {
   collection,
@@ -26,7 +29,13 @@ import GoalsTargets from "./components/GoalsTargets";
 import NetWorthTracker from "./components/NetWorthTracker";
 import Settings from "./components/Settings";
 import { CSS } from "./styles/appStyles";
-import { buildHeuristicReport, getAIBackendHealth, requestAIInsights } from "./lib/ai";
+import {
+  answerLocalFinanceQuestion,
+  buildHeuristicReport,
+  getAIBackendHealth,
+  requestAIInsights,
+  requestAIQuery,
+} from "./lib/ai";
 import {
   buildPie,
   fmtINR,
@@ -62,14 +71,16 @@ export default function App() {
   const [assets, setAssets] = useState([]);
   const [liabilities, setLiabilities] = useState([]);
   const [aiConfig, setAiConfig] = useState({
-    provider: "anthropic",
-    model: "claude-3-5-haiku-latest",
-    freeModel: "meta-llama/llama-3.3-8b-instruct:free",
+    provider: "openai",
+    model: "gpt-4.1-mini",
+    freeModel: "openrouter/free",
   });
   const [backendHealth, setBackendHealth] = useState({
-    providers: { anthropic: false, openrouter: false },
+    providers: { anthropic: false, openrouter: false, openai: false },
     proxyUrl: "http://127.0.0.1:8787",
   });
+  const [aiChatMessages, setAiChatMessages] = useState([]);
+  const [askLoading, setAskLoading] = useState(false);
   const [aiState, setAiState] = useState({
     loading: false,
     error: "",
@@ -88,6 +99,13 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => auth.onAuthStateChanged(setUser), []);
+
+  useEffect(() => {
+    getRedirectResult(auth).catch((e) => {
+      const msg = e?.message?.replace("Firebase: ", "") || "OAuth sign-in failed";
+      setToast({ msg, kind: "error" });
+    });
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -147,7 +165,24 @@ export default function App() {
 
   const handleLogin = (e, p) => signInWithEmailAndPassword(auth, e, p);
   const handleSignup = (e, p) => createUserWithEmailAndPassword(auth, e, p);
-  const handleGoogle = () => signInWithPopup(auth, new GoogleAuthProvider());
+  const signInWithProvider = async (provider) => {
+    const useRedirect = window.matchMedia?.("(max-width: 768px)")?.matches;
+    if (useRedirect) {
+      await signInWithRedirect(auth, provider);
+      return;
+    }
+    await signInWithPopup(auth, provider);
+  };
+  const handleGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    await signInWithProvider(provider);
+  };
+  const handleApple = async () => {
+    const provider = new OAuthProvider("apple.com");
+    provider.addScope("email");
+    provider.addScope("name");
+    await signInWithProvider(provider);
+  };
   const logout = () => {
     signOut(auth);
     setActiveTab("dashboard");
@@ -429,6 +464,53 @@ export default function App() {
     }
   };
 
+  const askAIQuestion = async (question) => {
+    const context = {
+      selectedMonth,
+      totals,
+      topCategories,
+      recurringOutflow,
+      unusualTransactions,
+      monthlySeries: monthlySeries.slice(-6),
+      yoyComparison,
+      netWorth,
+    };
+    const userMsg = { id: crypto.randomUUID(), role: "user", text: question, mode: "question" };
+    setAiChatMessages((prev) => [...prev, userMsg]);
+    setAskLoading(true);
+    try {
+      let answer = "";
+      let mode = "local";
+      if (backendHealth?.providers?.[aiConfig.provider]) {
+        const result = await requestAIQuery({
+          provider: aiConfig.provider,
+          model: aiConfig.model,
+          freeModel: aiConfig.freeModel,
+          context,
+          question,
+          history: aiChatMessages.slice(-6),
+        });
+        answer = result.text || "";
+        mode = aiConfig.provider;
+      } else {
+        answer = answerLocalFinanceQuestion(question, context, heuristicReport);
+      }
+      setAiChatMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", text: answer, mode },
+      ]);
+    } catch (e) {
+      const answer = answerLocalFinanceQuestion(question, context, heuristicReport);
+      setAiChatMessages((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), role: "assistant", text: answer, mode: "local-fallback" },
+      ]);
+      showToast(e.message || "AI question failed. Using local answer.", "warning");
+    } finally {
+      setAskLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!aiState.report && expenses.length) {
       setAiState((s) => ({ ...s, report: heuristicReport }));
@@ -478,7 +560,7 @@ export default function App() {
     return (
       <>
         <style>{CSS}</style>
-        <LoginPage onLogin={handleLogin} onSignup={handleSignup} onGoogle={handleGoogle} />
+        <LoginPage onLogin={handleLogin} onSignup={handleSignup} onGoogle={handleGoogle} onApple={handleApple} />
       </>
     );
   }
@@ -569,6 +651,9 @@ export default function App() {
                 topCategories={topCategories}
                 unusualTransactions={unusualTransactions}
                 totals={totals}
+                chatMessages={aiChatMessages}
+                onAskQuestion={askAIQuestion}
+                askLoading={askLoading}
               />
             )}
             {activeTab === "analytics" && (

@@ -78,3 +78,74 @@ export async function requestAIInsights(payload) {
   if (!res.ok) throw new Error(data?.error || "AI request failed");
   return data;
 }
+
+export async function requestAIQuery(payload) {
+  const res = await fetch("/api/ai/query", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || "AI query failed");
+  return data;
+}
+
+export function answerLocalFinanceQuestion(question, context, report) {
+  const q = question.toLowerCase();
+  const top = context.topCategories?.[0];
+  const savingsRate = context.totals?.savingsRate || 0;
+  const monthlyExpense = context.totals?.expense || 0;
+  const investment = context.totals?.investment || 0;
+  const insurance = context.totals?.insurance || 0;
+  const netWorth = context.netWorth || 0;
+
+  if (q.includes("save") || q.includes("cut") || q.includes("reduce")) {
+    return [
+      top ? `${top.name} is the first place I would inspect, because it is currently your largest expense bucket at ${fmtINR(top.value)}.` : "Your biggest savings opportunity will usually come from the top expense category.",
+      report.opportunities[1] || "Trim recurring discretionary spend before touching long-term investments.",
+      savingsRate < 15
+        ? "Your savings rate is still soft, so I would protect savings first and then optimize smaller categories."
+        : "Your savings rate is already decent, so focus on waste and low-value recurring spend rather than cutting aggressively everywhere.",
+    ].join(" ");
+  }
+
+  if (q.includes("invest")) {
+    return [
+      `You are currently investing ${fmtINR(investment)} in the selected period.`,
+      report.investmentIdeas[0],
+      savingsRate < 10
+        ? "I would improve cash-flow stability before taking materially more portfolio risk."
+        : "If your emergency buffer is intact, increasing automated investing is the cleanest next lever.",
+    ].join(" ");
+  }
+
+  if (q.includes("insurance")) {
+    return [
+      `Insurance outflow in the selected view is ${fmtINR(insurance)}.`,
+      insurance > 0
+        ? "Review whether each policy is still necessary, competitively priced, and sized to the real risk it is covering."
+        : "You do not have much visible insurance spend in the current data, so the next step is checking whether important protection gaps exist.",
+    ].join(" ");
+  }
+
+  if (q.includes("net worth") || q.includes("wealth")) {
+    return `Your tracked net worth is ${fmtINR(netWorth)}. That figure is being built from tracked cash reserve, logged investments, manual assets, and liabilities, so the quality of the answer improves as those sections stay updated.`;
+  }
+
+  if (q.includes("spend") || q.includes("expense")) {
+    return [
+      `Current selected-period expense is ${fmtINR(monthlyExpense)}.`,
+      top ? `${top.name} is your largest spend area.` : "You do not have a dominant spend bucket yet.",
+      context.unusualTransactions?.length
+        ? `I also see ${context.unusualTransactions.length} unusual transaction${context.unusualTransactions.length > 1 ? "s" : ""} worth reviewing.`
+        : "No unusual transactions are standing out right now.",
+    ].join(" ");
+  }
+
+  return [
+    report.headline,
+    report.opportunities[0],
+    report.tips[0],
+    "If you want a sharper answer, ask about spending cuts, investing, insurance, savings rate, or net worth.",
+  ].join(" ");
+}

@@ -68,23 +68,30 @@ export default function Settings({
             <label className="fl">Provider</label>
             <select className="fs" value={aiConfig.provider} onChange={(e) => setAiConfig((s) => ({ ...s, provider: e.target.value }))}>
               <option value="anthropic">Anthropic Claude</option>
+              <option value="openai">OpenAI</option>
               <option value="openrouter">OpenRouter Free Model</option>
             </select>
           </div>
           <div className="fg">
-            <label className="fl">Claude Model</label>
-            <input className="fi" placeholder="claude-3-5-haiku-latest" value={aiConfig.model} onChange={(e) => setAiConfig((s) => ({ ...s, model: e.target.value }))} />
+            <label className="fl">Model</label>
+            <input className="fi" placeholder={aiConfig.provider === "openai" ? "gpt-4.1-mini" : "claude-3-5-haiku-latest"} value={aiConfig.model} onChange={(e) => setAiConfig((s) => ({ ...s, model: e.target.value }))} />
           </div>
           <div className="fg full">
             <label className="fl">Free Model</label>
-            <input className="fi" placeholder="meta-llama/llama-3.3-8b-instruct:free" value={aiConfig.freeModel} onChange={(e) => setAiConfig((s) => ({ ...s, freeModel: e.target.value }))} />
+            <input className="fi" placeholder="openrouter/free" value={aiConfig.freeModel} onChange={(e) => setAiConfig((s) => ({ ...s, freeModel: e.target.value }))} />
           </div>
         </div>
         <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
           Anthropic key: <strong style={{ color: backendHealth?.providers?.anthropic ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.anthropic ? "configured" : "missing"}</strong><br />
+          OpenAI key: <strong style={{ color: backendHealth?.providers?.openai ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.openai ? "configured" : "missing"}</strong><br />
           OpenRouter key: <strong style={{ color: backendHealth?.providers?.openrouter ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.openrouter ? "configured" : "missing"}</strong><br />
           Proxy URL: <strong style={{ color: "var(--text)" }}>{backendHealth?.proxyUrl || "http://127.0.0.1:8787"}</strong>
         </div>
+        {backendHealth?.warnings?.likelyOpenAIKeyStoredAsOpenRouter && (
+          <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--accent)", lineHeight: 1.6 }}>
+            It looks like an OpenAI-style key may be stored under <code>OPENROUTER_API_KEY</code>. Move it to <code>OPENAI_API_KEY</code> for the cleanest setup.
+          </div>
+        )}
       </div>
 
       <div className="settings-section">
