@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export default function Settings({
   budget,
   budgetInput,
@@ -12,7 +14,27 @@ export default function Settings({
   notificationsEnabled,
   setNotificationsEnabled,
   backendHealth,
+  onSendVerificationEmail,
+  onSendPasswordReset,
+  onChangeEmail,
 }) {
+  const [nextEmail, setNextEmail] = useState(user?.email || "");
+  const [accountState, setAccountState] = useState({ loading: "", error: "", ok: "" });
+
+  const runAccountAction = async (loadingKey, action, successMessage) => {
+    setAccountState({ loading: loadingKey, error: "", ok: "" });
+    try {
+      await action();
+      setAccountState({ loading: "", error: "", ok: successMessage });
+    } catch (e) {
+      setAccountState({
+        loading: "",
+        error: e?.message?.replace("Firebase: ", "") || "Request failed.",
+        ok: "",
+      });
+    }
+  };
+
   return (
     <>
       <div className="page-header">
@@ -39,7 +61,7 @@ export default function Settings({
         <h3>Monthly Budget</h3>
         <p>Budget warnings are used by the dashboard and smart notifications system.</p>
         <div className="setting-row">
-          <input className="setting-input" type="number" placeholder="Enter monthly limit…" value={budgetInput} onChange={(e) => setBudgetInput(e.target.value)} />
+          <input className="setting-input" type="number" placeholder="Enter monthly limit..." value={budgetInput} onChange={(e) => setBudgetInput(e.target.value)} />
           <button className="btn-save" onClick={onSaveBudget}>Save</button>
         </div>
         {!!budget && <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--text3)" }}>Current: <span style={{ color: "var(--accent)", fontWeight: 600 }}>₹{Number(budget).toLocaleString("en-IN")}</span></div>}
@@ -96,8 +118,66 @@ export default function Settings({
 
       <div className="settings-section">
         <h3>Account</h3>
-        <p>Signed in as <strong style={{ color: "var(--text)" }}>{user?.email || user?.phoneNumber || "Google User"}</strong></p>
-        <button className="danger-btn" onClick={logout}>Sign Out</button>
+        <p>
+          Signed in as <strong style={{ color: "var(--text)" }}>{user?.email || "Google User"}</strong>
+        </p>
+        <div className="account-badges">
+          <span className={`status-pill ${user?.emailVerified ? "verified" : "pending"}`}>
+            {user?.emailVerified ? "Email verified" : "Email not verified"}
+          </span>
+          <span className="status-pill neutral">{user?.providerData?.map((p) => p.providerId.replace(".com", "")).join(", ") || "password"}</span>
+        </div>
+        {accountState.error && <div className="auth-error" style={{ marginTop: 14, marginBottom: 0 }}>{accountState.error}</div>}
+        {accountState.ok && <div className="auth-ok" style={{ marginTop: 14, marginBottom: 0 }}>{accountState.ok}</div>}
+
+        <div className="account-grid">
+          <div className="account-card">
+            <strong>Email verification</strong>
+            <p>Send a verification email so your account is trusted for security-sensitive changes.</p>
+            <button
+              className="btn-secondary"
+              disabled={accountState.loading === "verify" || user?.emailVerified}
+              onClick={() => runAccountAction("verify", onSendVerificationEmail, "Verification email sent.")}
+            >
+              {user?.emailVerified ? "Already verified" : accountState.loading === "verify" ? "Sending..." : "Send verification email"}
+            </button>
+          </div>
+
+          <div className="account-card">
+            <strong>Password reset</strong>
+            <p>Email yourself a secure reset link in case you want to rotate your password.</p>
+            <button
+              className="btn-secondary"
+              disabled={accountState.loading === "reset"}
+              onClick={() => runAccountAction("reset", onSendPasswordReset, "Password reset email sent.")}
+            >
+              {accountState.loading === "reset" ? "Sending..." : "Send reset email"}
+            </button>
+          </div>
+
+          <div className="account-card account-card-wide">
+            <strong>Change email address</strong>
+            <p>We will send a verification link to the new address. The change completes after the link is approved.</p>
+            <div className="setting-row">
+              <input className="setting-input" type="email" value={nextEmail} onChange={(e) => setNextEmail(e.target.value)} placeholder="new-email@example.com" />
+              <button
+                className="btn-save"
+                disabled={accountState.loading === "change-email" || !nextEmail || nextEmail === user?.email}
+                onClick={() =>
+                  runAccountAction(
+                    "change-email",
+                    () => onChangeEmail(nextEmail),
+                    `Verification sent to ${nextEmail}. Confirm it from your inbox to complete the email change.`
+                  )
+                }
+              >
+                {accountState.loading === "change-email" ? "Sending..." : "Change email"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <button className="danger-btn" style={{ marginTop: 18 }} onClick={logout}>Sign Out</button>
       </div>
     </>
   );

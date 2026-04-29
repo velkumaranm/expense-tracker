@@ -20,6 +20,12 @@ export default function AnalyticsReports({
   onExportPdf,
   onExportCsv,
 }) {
+  const validMonths = monthlySeries.filter((month) => month.income || month.expense || month.investment || month.insurance);
+  const bestSavingsMonth = validMonths.reduce((best, month) => (!best || month.savings > best.savings ? month : best), null);
+  const worstExpenseMonth = validMonths.reduce((worst, month) => (!worst || month.expense > worst.expense ? month : worst), null);
+  const averageSavings = validMonths.length ? validMonths.reduce((sum, month) => sum + month.savings, 0) / validMonths.length : 0;
+  const averageExpense = validMonths.length ? validMonths.reduce((sum, month) => sum + month.expense, 0) / validMonths.length : 0;
+
   return (
     <>
       <div className="page-header">
@@ -53,6 +59,26 @@ export default function AnalyticsReports({
           <div className="sc-label">Savings YoY</div>
           <div className="sc-value" style={{ color: "var(--accent)" }}>{yoyComparison.savingsDelta}</div>
           <div className="sc-sub">{fmtINR(yoyComparison.current.savings)} vs {fmtINR(yoyComparison.previous.savings)}</div>
+        </div>
+        <div className="summary-card summary-span-3">
+          <div className="sc-label">Best Savings Month</div>
+          <div className="sc-value" style={{ color: "var(--income)" }}>{bestSavingsMonth ? fmtINR(bestSavingsMonth.savings) : "—"}</div>
+          <div className="sc-sub">{bestSavingsMonth ? bestSavingsMonth.label : "Need more history"}</div>
+        </div>
+        <div className="summary-card summary-span-3">
+          <div className="sc-label">Peak Spend Month</div>
+          <div className="sc-value" style={{ color: "var(--expense)" }}>{worstExpenseMonth ? fmtINR(worstExpenseMonth.expense) : "—"}</div>
+          <div className="sc-sub">{worstExpenseMonth ? worstExpenseMonth.label : "Need more history"}</div>
+        </div>
+        <div className="summary-card summary-span-3">
+          <div className="sc-label">Average Savings</div>
+          <div className="sc-value" style={{ color: averageSavings >= 0 ? "var(--accent)" : "var(--expense)" }}>{fmtINR(averageSavings)}</div>
+          <div className="sc-sub">Typical monthly savings across populated months.</div>
+        </div>
+        <div className="summary-card summary-span-3">
+          <div className="sc-label">Average Expense</div>
+          <div className="sc-value" style={{ color: "var(--expense)" }}>{fmtINR(averageExpense)}</div>
+          <div className="sc-sub">Useful as a baseline for variance and planning.</div>
         </div>
       </div>
 

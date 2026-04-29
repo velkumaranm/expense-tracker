@@ -8,7 +8,12 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
-  OAuthProvider,
+  isSignInWithEmailLink,
+  sendSignInLinkToEmail,
+  signInWithEmailLink,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  verifyBeforeUpdateEmail,
 } from "firebase/auth";
 import {
   collection,
@@ -49,6 +54,10 @@ import {
 } from "./lib/utils";
 
 export default function App() {
+  const emailActionSettings = {
+    url: window.location.origin,
+    handleCodeInApp: true,
+  };
   const [user, setUser] = useState(null);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("finwise-theme") !== "light");
   const [amount, setAmount] = useState("");
@@ -108,6 +117,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isSignInWithEmailLink(auth, window.location.href)) return;
+
+    const finishEmailLinkSignIn = async () => {
+      try {
+        let email = window.localStorage.getItem("finwise-email-link");
+        if (!email) {
+          email = window.prompt("Enter the same email address you used for the sign-in link") || "";
+        }
+        if (!email) {
+          throw new Error("Email link sign-in needs the same email address used when the link was requested.");
+        }
+        await signInWithEmailLink(auth, email, window.location.href);
+        window.localStorage.removeItem("finwise-email-link");
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setToast({ msg: "Magic link accepted. You are signed in.", kind: "success" });
+      } catch (e) {
+        const msg = e?.message?.replace("Firebase: ", "") || "Email link sign-in failed";
+        setToast({ msg, kind: "error" });
+      }
+    };
+
+    finishEmailLinkSignIn();
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     return onSnapshot(collection(db, "users", user.uid, "expenses"), (snap) =>
       setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
@@ -164,7 +198,13 @@ export default function App() {
   }, []);
 
   const handleLogin = (e, p) => signInWithEmailAndPassword(auth, e, p);
-  const handleSignup = (e, p) => createUserWithEmailAndPassword(auth, e, p);
+  const handleSignup = async (e, p) => {
+    const cred = await createUserWithEmailAndPassword(auth, e, p);
+    if (cred.user && !cred.user.emailVerified) {
+      await sendEmailVerification(cred.user, emailActionSettings);
+    }
+    return cred;
+  };
   const signInWithProvider = async (provider) => {
     const useRedirect = window.matchMedia?.("(max-width: 768px)")?.matches;
     if (useRedirect) {
@@ -177,15 +217,27 @@ export default function App() {
     const provider = new GoogleAuthProvider();
     await signInWithProvider(provider);
   };
-  const handleApple = async () => {
-    const provider = new OAuthProvider("apple.com");
-    provider.addScope("email");
-    provider.addScope("name");
-    await signInWithProvider(provider);
-  };
   const logout = () => {
     signOut(auth);
     setActiveTab("dashboard");
+  };
+  const handleSendEmailLink = async (email) => {
+    window.localStorage.setItem("finwise-email-link", email);
+    await sendSignInLinkToEmail(auth, email, emailActionSettings);
+  };
+  const handleSendVerificationEmail = async () => {
+    if (!auth.currentUser) throw new Error("You need to be signed in.");
+    await sendEmailVerification(auth.currentUser, emailActionSettings);
+    await auth.currentUser.reload();
+    setUser({ ...auth.currentUser });
+  };
+  const handleSendPasswordReset = async () => {
+    if (!auth.currentUser?.email) throw new Error("This account does not have an email address on file.");
+    await sendPasswordResetEmail(auth, auth.currentUser.email);
+  };
+  const handleChangeEmail = async (nextEmail) => {
+    if (!auth.currentUser) throw new Error("You need to be signed in.");
+    await verifyBeforeUpdateEmail(auth.currentUser, nextEmail, emailActionSettings);
   };
 
   const submitTransaction = async () => {
@@ -560,7 +612,7 @@ export default function App() {
     return (
       <>
         <style>{CSS}</style>
-        <LoginPage onLogin={handleLogin} onSignup={handleSignup} onGoogle={handleGoogle} onApple={handleApple} />
+        <LoginPage onLogin={handleLogin} onSignup={handleSignup} onGoogle={handleGoogle} onSendEmailLink={handleSendEmailLink} />
       </>
     );
   }
@@ -639,6 +691,14 @@ export default function App() {
                 recurringOutflow={recurringOutflow}
                 netWorth={netWorth}
                 unusualTransactions={unusualTransactions}
+                goals={goals}
+                totalTransactions={expenses.length}
+                assetCount={assets.length}
+                liabilityCount={liabilities.length}
+                onJumpToAdd={() => setActiveTab("add")}
+                onJumpToImport={() => setActiveTab("import")}
+                onJumpToGoals={() => setActiveTab("goals")}
+                onJumpToNetWorth={() => setActiveTab("wealth")}
               />
             )}
             {activeTab === "ai" && (
@@ -653,6 +713,7 @@ export default function App() {
                 totals={totals}
                 chatMessages={aiChatMessages}
                 onAskQuestion={askAIQuestion}
+                onClearChat={() => setAiChatMessages([])}
                 askLoading={askLoading}
               />
             )}
@@ -737,6 +798,9 @@ export default function App() {
                 notificationsEnabled={notificationsEnabled}
                 setNotificationsEnabled={setNotificationsEnabled}
                 backendHealth={backendHealth}
+                onSendVerificationEmail={handleSendVerificationEmail}
+                onSendPasswordReset={handleSendPasswordReset}
+                onChangeEmail={handleChangeEmail}
               />
             )}
           </div>

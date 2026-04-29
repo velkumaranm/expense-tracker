@@ -33,9 +33,25 @@ export default function Dashboard({
   recurringOutflow,
   netWorth,
   unusualTransactions,
+  goals,
+  totalTransactions,
+  assetCount,
+  liabilityCount,
+  onJumpToAdd,
+  onJumpToImport,
+  onJumpToGoals,
+  onJumpToNetWorth,
 }) {
   const balanceTone = totals.balance >= 0 ? "var(--income)" : "var(--expense)";
   const savingsColor = totals.savingsRate >= 20 ? "var(--income)" : totals.savingsRate >= 10 ? "var(--accent)" : "var(--expense)";
+  const runwayMonths = totals.expense > 0 ? netWorth / totals.expense : 0;
+  const investRate = totals.income > 0 ? (totals.investment / totals.income) * 100 : 0;
+  const goalFundingGap = goals.reduce((sum, goal) => sum + Math.max(Number(goal.targetAmount || 0) - Number(goal.currentAmount || 0), 0), 0);
+  const setupScore = [
+    totalTransactions > 0,
+    goals.length > 0,
+    assetCount + liabilityCount > 0,
+  ].filter(Boolean).length;
 
   return (
     <>
@@ -47,6 +63,42 @@ export default function Dashboard({
       </div>
 
       <MonthStrip months={months} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+
+      {setupScore < 3 && (
+        <div className="section-card" style={{ marginBottom: 14 }}>
+          <div className="section-head" style={{ marginBottom: 12 }}>
+            <div>
+              <h3>Get Finwise Fully Set Up</h3>
+              <p style={{ marginBottom: 0 }}>
+                A few pieces of data will make the dashboards, AI, goals, and net worth views much more useful.
+              </p>
+            </div>
+            <span className="status-pill neutral">{setupScore}/3 complete</span>
+          </div>
+          <div className="onboarding-grid">
+            <div className="insight-item">
+              <strong>{totalTransactions > 0 ? "Transactions connected" : "Add your first transactions"}</strong>
+              <p>{totalTransactions > 0 ? `${totalTransactions} transaction${totalTransactions !== 1 ? "s" : ""} are already shaping your analytics.` : "Income, expenses, investments, and insurance make every other page smarter."}</p>
+              {!totalTransactions && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToAdd}>Add Transaction</button>}
+            </div>
+            <div className="insight-item">
+              <strong>{goals.length > 0 ? "Goals in motion" : "Create at least one goal"}</strong>
+              <p>{goals.length > 0 ? `${goals.length} goal${goals.length !== 1 ? "s are" : " is"} being tracked for progress and funding pace.` : "Goals turn your cash flow into a plan, not just a record of what already happened."}</p>
+              {!goals.length && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToGoals}>Set a Goal</button>}
+            </div>
+            <div className="insight-item">
+              <strong>{assetCount + liabilityCount > 0 ? "Balance sheet started" : "Complete your net worth"}</strong>
+              <p>{assetCount + liabilityCount > 0 ? `${assetCount} asset${assetCount !== 1 ? "s" : ""} and ${liabilityCount} liabilit${liabilityCount === 1 ? "y" : "ies"} are already included.` : "Adding assets and liabilities makes runway, debt, and wealth diagnostics more realistic."}</p>
+              {!(assetCount + liabilityCount > 0) && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToNetWorth}>Add Assets</button>}
+            </div>
+          </div>
+          {!totalTransactions && (
+            <button className="btn-primary" style={{ marginTop: 12 }} onClick={onJumpToImport}>
+              Import Existing Data
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="summary-grid">
         <div className="summary-card summary-span-6">
@@ -85,6 +137,21 @@ export default function Dashboard({
           <div className="sc-label">Insurance</div>
           <div className="sc-value" style={{ color: "var(--insure)" }}>{fmtINR(totals.insurance)}</div>
           <div className="sc-sub">Protection outflow and risk cover spend.</div>
+        </div>
+        <div className="summary-card summary-span-3">
+          <div className="sc-label">Runway</div>
+          <div className="sc-value" style={{ color: runwayMonths >= 6 ? "var(--income)" : "var(--accent)" }}>{totals.expense > 0 ? `${runwayMonths.toFixed(1)} mo` : "—"}</div>
+          <div className="sc-sub">How many months current net worth could cover the selected-period expense level.</div>
+        </div>
+        <div className="summary-card summary-span-3">
+          <div className="sc-label">Investment Rate</div>
+          <div className="sc-value" style={{ color: investRate >= 15 ? "var(--invest)" : "var(--accent)" }}>{totals.income > 0 ? `${investRate.toFixed(1)}%` : "—"}</div>
+          <div className="sc-sub">Share of income currently routed into investing.</div>
+        </div>
+        <div className="summary-card summary-span-6">
+          <div className="sc-label">Goal Funding Gap</div>
+          <div className="sc-value" style={{ color: "var(--accent)" }}>{fmtINR(goalFundingGap)}</div>
+          <div className="sc-sub">Amount still needed to fully fund all active goals and targets.</div>
         </div>
       </div>
 

@@ -34,6 +34,7 @@ export const EXPENSE_CATEGORIES = [
 
 export const INVESTMENT_CATEGORIES = [
   "Stocks — NSE/BSE",
+  "Stocks — US",
   "Mutual Fund — Equity",
   "Mutual Fund — Debt",
   "Mutual Fund — Hybrid",
@@ -116,6 +117,7 @@ export const CATEGORY_ICONS = {
   "Eating Out": "🍜",
   "Other Expense": "📦",
   "Stocks — NSE/BSE": "📉",
+  "Stocks — US":"📉",
   "Mutual Fund — Equity": "📈",
   "Mutual Fund — Debt": "📊",
   "Mutual Fund — Hybrid": "⚖️",
