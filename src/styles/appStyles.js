@@ -137,6 +137,7 @@ textarea{min-height:92px;resize:vertical}
 .settings-section,.section-card{padding:20px;margin-bottom:12px}
 .settings-section h3,.section-card h3{font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px}
 .settings-section p{font-size:11.5px;color:var(--text3);line-height:1.55;margin-bottom:14px}
+.tab-loading-card{min-height:220px;display:grid;align-content:center;justify-items:start}
 .setting-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .account-badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .status-pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid var(--border);font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}

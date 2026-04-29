@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { auth, db } from "./firebase";
 import {
   signInWithEmailAndPassword,
@@ -24,15 +24,6 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import LoginPage from "./components/LoginPage";
-import Dashboard from "./components/Dashboard";
-import AddForm from "./components/AddForm";
-import History from "./components/History";
-import ImportPage from "./components/ImportPage";
-import AIInsights from "./components/AIInsights";
-import AnalyticsReports from "./components/AnalyticsReports";
-import GoalsTargets from "./components/GoalsTargets";
-import NetWorthTracker from "./components/NetWorthTracker";
-import Settings from "./components/Settings";
 import { CSS } from "./styles/appStyles";
 import {
   answerLocalFinanceQuestion,
@@ -52,6 +43,16 @@ import {
   toLocalDateStr,
   toYYYYMM,
 } from "./lib/utils";
+
+const Dashboard = lazy(() => import("./components/Dashboard"));
+const AddForm = lazy(() => import("./components/AddForm"));
+const History = lazy(() => import("./components/History"));
+const ImportPage = lazy(() => import("./components/ImportPage"));
+const AIInsights = lazy(() => import("./components/AIInsights"));
+const AnalyticsReports = lazy(() => import("./components/AnalyticsReports"));
+const GoalsTargets = lazy(() => import("./components/GoalsTargets"));
+const NetWorthTracker = lazy(() => import("./components/NetWorthTracker"));
+const Settings = lazy(() => import("./components/Settings"));
 
 export default function App() {
   const emailActionSettings = {
@@ -638,6 +639,161 @@ export default function App() {
     { id: "settings", icon: "⚙", label: "More" },
   ];
 
+  const tabLoadingFallback = (
+    <div className="section-card tab-loading-card">
+      <h3>Loading View</h3>
+      <p>Preparing the next workspace...</p>
+    </div>
+  );
+
+  const renderActiveTab = () => {
+    if (activeTab === "dashboard") {
+      return (
+        <Dashboard
+          months={months}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          totals={totals}
+          budgetNum={budgetNum}
+          budgetProgress={budgetProgress}
+          budgetColor={budgetColor}
+          expPieData={expPieData}
+          invPieData={invPieData}
+          insPieData={insPieData}
+          monthlySeries={monthlySeries}
+          alerts={alerts}
+          topCategories={topCategories}
+          recurringOutflow={recurringOutflow}
+          netWorth={netWorth}
+          unusualTransactions={unusualTransactions}
+          goals={goals}
+          totalTransactions={expenses.length}
+          assetCount={assets.length}
+          liabilityCount={liabilities.length}
+          onJumpToAdd={() => setActiveTab("add")}
+          onJumpToImport={() => setActiveTab("import")}
+          onJumpToGoals={() => setActiveTab("goals")}
+          onJumpToNetWorth={() => setActiveTab("wealth")}
+        />
+      );
+    }
+    if (activeTab === "ai") {
+      return (
+        <AIInsights
+          report={aiState.report}
+          aiState={aiState}
+          onGenerate={runAIInsights}
+          aiConfig={aiConfig}
+          backendHealth={backendHealth}
+          topCategories={topCategories}
+          unusualTransactions={unusualTransactions}
+          totals={totals}
+          chatMessages={aiChatMessages}
+          onAskQuestion={askAIQuestion}
+          onClearChat={() => setAiChatMessages([])}
+          askLoading={askLoading}
+        />
+      );
+    }
+    if (activeTab === "analytics") {
+      return (
+        <AnalyticsReports
+          monthlySeries={monthlySeries}
+          yoyComparison={yoyComparison}
+          categoryTrendSeries={categoryTrendSeries}
+          heatmap={heatmap}
+          onExportPdf={exportAnalyticsPdf}
+          onExportCsv={exportCSV}
+        />
+      );
+    }
+    if (activeTab === "goals") return <GoalsTargets goals={goals} setGoals={setGoals} />;
+    if (activeTab === "wealth") {
+      return (
+        <NetWorthTracker
+          assets={assets}
+          setAssets={setAssets}
+          liabilities={liabilities}
+          setLiabilities={setLiabilities}
+          trackedCash={trackedCash}
+          trackedInvestments={trackedInvestments}
+          netWorth={netWorth}
+        />
+      );
+    }
+    if (activeTab === "add") {
+      return (
+        <AddForm
+          amount={amount}
+          setAmount={setAmount}
+          type={type}
+          setType={setType}
+          category={category}
+          setCategory={setCategory}
+          note={note}
+          setNote={setNote}
+          date={date}
+          setDate={setDate}
+          editId={editId}
+          onSubmit={submitTransaction}
+          onCancel={cancelEdit}
+          recurring={recurring}
+          setRecurring={setRecurring}
+          recurringFrequency={recurringFrequency}
+          setRecurringFrequency={setRecurringFrequency}
+        />
+      );
+    }
+    if (activeTab === "history") {
+      return (
+        <History
+          filtered={filtered}
+          search={search}
+          setSearch={setSearch}
+          filterCategory={filterCategory}
+          setFilterCategory={setFilterCategory}
+          filterType={filterType}
+          setFilterType={setFilterType}
+          recurringOnly={recurringOnly}
+          setRecurringOnly={setRecurringOnly}
+          onEdit={editExpense}
+          onDelete={deleteExpense}
+          onExport={exportCSV}
+          months={months}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+        />
+      );
+    }
+    if (activeTab === "import") return <ImportPage onImport={importSingleRecord} showToast={showToast} />;
+    if (activeTab === "settings") {
+      return (
+        <Settings
+          budget={budget}
+          budgetInput={budgetInput}
+          setBudgetInput={setBudgetInput}
+          onSaveBudget={() => {
+            setBudget(budgetInput);
+            showToast("Budget saved.");
+          }}
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          user={user}
+          logout={logout}
+          aiConfig={aiConfig}
+          setAiConfig={setAiConfig}
+          notificationsEnabled={notificationsEnabled}
+          setNotificationsEnabled={setNotificationsEnabled}
+          backendHealth={backendHealth}
+          onSendVerificationEmail={handleSendVerificationEmail}
+          onSendPasswordReset={handleSendPasswordReset}
+          onChangeEmail={handleChangeEmail}
+        />
+      );
+    }
+    return null;
+  };
+
   return (
     <>
       <style>{CSS}</style>
@@ -673,136 +829,9 @@ export default function App() {
 
         <main className="main">
           <div className="content">
-            {activeTab === "dashboard" && (
-              <Dashboard
-                months={months}
-                selectedMonth={selectedMonth}
-                setSelectedMonth={setSelectedMonth}
-                totals={totals}
-                budgetNum={budgetNum}
-                budgetProgress={budgetProgress}
-                budgetColor={budgetColor}
-                expPieData={expPieData}
-                invPieData={invPieData}
-                insPieData={insPieData}
-                monthlySeries={monthlySeries}
-                alerts={alerts}
-                topCategories={topCategories}
-                recurringOutflow={recurringOutflow}
-                netWorth={netWorth}
-                unusualTransactions={unusualTransactions}
-                goals={goals}
-                totalTransactions={expenses.length}
-                assetCount={assets.length}
-                liabilityCount={liabilities.length}
-                onJumpToAdd={() => setActiveTab("add")}
-                onJumpToImport={() => setActiveTab("import")}
-                onJumpToGoals={() => setActiveTab("goals")}
-                onJumpToNetWorth={() => setActiveTab("wealth")}
-              />
-            )}
-            {activeTab === "ai" && (
-              <AIInsights
-                report={aiState.report}
-                aiState={aiState}
-                onGenerate={runAIInsights}
-                aiConfig={aiConfig}
-                backendHealth={backendHealth}
-                topCategories={topCategories}
-                unusualTransactions={unusualTransactions}
-                totals={totals}
-                chatMessages={aiChatMessages}
-                onAskQuestion={askAIQuestion}
-                onClearChat={() => setAiChatMessages([])}
-                askLoading={askLoading}
-              />
-            )}
-            {activeTab === "analytics" && (
-              <AnalyticsReports
-                monthlySeries={monthlySeries}
-                yoyComparison={yoyComparison}
-                categoryTrendSeries={categoryTrendSeries}
-                heatmap={heatmap}
-                onExportPdf={exportAnalyticsPdf}
-                onExportCsv={exportCSV}
-              />
-            )}
-            {activeTab === "goals" && <GoalsTargets goals={goals} setGoals={setGoals} />}
-            {activeTab === "wealth" && (
-              <NetWorthTracker
-                assets={assets}
-                setAssets={setAssets}
-                liabilities={liabilities}
-                setLiabilities={setLiabilities}
-                trackedCash={trackedCash}
-                trackedInvestments={trackedInvestments}
-                netWorth={netWorth}
-              />
-            )}
-            {activeTab === "add" && (
-              <AddForm
-                amount={amount}
-                setAmount={setAmount}
-                type={type}
-                setType={setType}
-                category={category}
-                setCategory={setCategory}
-                note={note}
-                setNote={setNote}
-                date={date}
-                setDate={setDate}
-                editId={editId}
-                onSubmit={submitTransaction}
-                onCancel={cancelEdit}
-                recurring={recurring}
-                setRecurring={setRecurring}
-                recurringFrequency={recurringFrequency}
-                setRecurringFrequency={setRecurringFrequency}
-              />
-            )}
-            {activeTab === "history" && (
-              <History
-                filtered={filtered}
-                search={search}
-                setSearch={setSearch}
-                filterCategory={filterCategory}
-                setFilterCategory={setFilterCategory}
-                filterType={filterType}
-                setFilterType={setFilterType}
-                recurringOnly={recurringOnly}
-                setRecurringOnly={setRecurringOnly}
-                onEdit={editExpense}
-                onDelete={deleteExpense}
-                onExport={exportCSV}
-                months={months}
-                selectedMonth={selectedMonth}
-                setSelectedMonth={setSelectedMonth}
-              />
-            )}
-            {activeTab === "import" && <ImportPage onImport={importSingleRecord} showToast={showToast} />}
-            {activeTab === "settings" && (
-              <Settings
-                budget={budget}
-                budgetInput={budgetInput}
-                setBudgetInput={setBudgetInput}
-                onSaveBudget={() => {
-                  setBudget(budgetInput);
-                  showToast("Budget saved.");
-                }}
-                darkMode={darkMode}
-                setDarkMode={setDarkMode}
-                user={user}
-                logout={logout}
-                aiConfig={aiConfig}
-                setAiConfig={setAiConfig}
-                notificationsEnabled={notificationsEnabled}
-                setNotificationsEnabled={setNotificationsEnabled}
-                backendHealth={backendHealth}
-                onSendVerificationEmail={handleSendVerificationEmail}
-                onSendPasswordReset={handleSendPasswordReset}
-                onChangeEmail={handleChangeEmail}
-              />
-            )}
+            <Suspense fallback={tabLoadingFallback}>
+              {renderActiveTab()}
+            </Suspense>
           </div>
         </main>
 
