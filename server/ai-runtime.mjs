@@ -35,6 +35,8 @@ export function healthPayload() {
     },
     marketProviders: {
       alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
+      twelveData: Boolean(process.env.TWELVE_DATA_API_KEY),
+      finnhub: Boolean(process.env.FINNHUB_API_KEY),
     },
     warnings: {
       likelyOpenAIKeyStoredAsOpenRouter:

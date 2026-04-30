@@ -130,12 +130,14 @@ export default function Settings({
       <div className="settings-section">
         <h3>Market Data</h3>
         <p>
-          Finwise can refresh stock holdings with Alpha Vantage and mutual funds with a free AMFI-backed NAV feed. Stock quotes stay server-side, just like AI keys.
+          Finwise now uses a fallback ladder for market refresh: Twelve Data first where it has the strongest free allowance, then Finnhub, then Alpha Vantage. Mutual funds still use a free AMFI-backed NAV feed.
         </p>
         <div style={{ fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
+          Twelve Data key: <strong style={{ color: backendHealth?.marketProviders?.twelveData ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.twelveData ? "configured" : "missing"}</strong><br />
+          Finnhub key: <strong style={{ color: backendHealth?.marketProviders?.finnhub ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.finnhub ? "configured" : "missing"}</strong><br />
           Alpha Vantage key: <strong style={{ color: backendHealth?.marketProviders?.alphaVantage ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.alphaVantage ? "configured" : "missing"}</strong><br />
           Mutual fund NAV feed: <strong style={{ color: "var(--income)" }}>available</strong><br />
-          Refresh model: <strong style={{ color: "var(--text)" }}>manual, daily-friendly</strong>
+          Refresh model: <strong style={{ color: "var(--text)" }}>manual, daily-friendly, fallback-aware</strong>
         </div>
       </div>
 

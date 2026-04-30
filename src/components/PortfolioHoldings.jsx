@@ -27,6 +27,62 @@ function normalizeHoldingError(message) {
   return text;
 }
 
+const KIND_OPTIONS = [
+  { id: "stock", label: "Stock / ETF" },
+  { id: "mutualFund", label: "Mutual Fund" },
+  { id: "crypto", label: "Crypto" },
+  { id: "commodity", label: "Commodity" },
+];
+
+function kindLabel(kind) {
+  if (kind === "mutualFund") return "Mutual Fund";
+  if (kind === "crypto") return "Crypto";
+  if (kind === "commodity") return "Commodity";
+  return "Stock";
+}
+
+function searchPlaceholder(kind) {
+  if (kind === "mutualFund") return "Search fund by name, e.g. HDFC Flexi Cap";
+  if (kind === "crypto") return "Search crypto pair or coin, e.g. BTC/USD";
+  if (kind === "commodity") return "Search gold, silver, WTI, Brent...";
+  return "Search stock or type symbol like RELIANCE.BSE";
+}
+
+function symbolLabel(kind) {
+  if (kind === "mutualFund") return "Scheme Code";
+  if (kind === "crypto") return "Crypto Symbol";
+  if (kind === "commodity") return "Commodity Symbol";
+  return "Stock Symbol";
+}
+
+function symbolPlaceholder(kind) {
+  if (kind === "mutualFund") return "125497";
+  if (kind === "crypto") return "BTC/USD or BINANCE:BTCUSDT";
+  if (kind === "commodity") return "XAU/USD, WTI, BRENT";
+  return "RELIANCE.BSE or AAPL";
+}
+
+function providerCopy(kind, marketProviders) {
+  if (kind === "mutualFund") {
+    return "Mutual fund values use the latest NAV from a free AMFI-backed fund feed.";
+  }
+  if (kind === "commodity") {
+    return marketProviders?.alphaVantage
+      ? "Commodities use a curated free-market feed path. Gold, silver, crude, and natural gas are the most reliable first set."
+      : "Add ALPHA_VANTAGE_API_KEY on the backend to refresh commodity holdings.";
+  }
+  if (kind === "crypto") {
+    if (marketProviders?.twelveData || marketProviders?.finnhub || marketProviders?.alphaVantage) {
+      return "Crypto refresh prefers the higher-free-call providers first, then falls back gracefully if one is unavailable."
+    }
+    return "Add TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY on the backend to search and refresh crypto prices.";
+  }
+  if (marketProviders?.twelveData || marketProviders?.finnhub || marketProviders?.alphaVantage) {
+    return "Stocks prefer the higher-free-call providers first, then fall back to the next available feed during refresh.";
+  }
+  return "Add TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY on the backend to search and refresh stock prices.";
+}
+
 function toLocalStamp(iso) {
   if (!iso) return "Not refreshed yet";
   try {
@@ -76,6 +132,7 @@ export default function PortfolioHoldings({
   const applyResult = (item) => {
     setForm((prev) => ({
       ...prev,
+      kind: item.kind || prev.kind,
       name: item.name || prev.name,
       symbol: item.symbol || "",
       schemeCode: item.schemeCode || "",
@@ -97,7 +154,7 @@ export default function PortfolioHoldings({
 
   const addHolding = () => {
     if (!form.name || !form.units || !form.costPerUnit) return;
-    if (form.kind === "stock" && !form.symbol) return;
+    if (["stock", "crypto", "commodity"].includes(form.kind) && !form.symbol) return;
     if (form.kind === "mutualFund" && !form.schemeCode) return;
     setHoldings((prev) => [
       {
@@ -119,7 +176,7 @@ export default function PortfolioHoldings({
       },
       ...prev,
     ]);
-    setForm(emptyForm);
+    setForm((prev) => ({ ...emptyForm, kind: prev.kind }));
     setSearchState({ query: "", loading: false, error: "", results: [] });
     showToast("Holding added. Refresh once to fetch the latest price.");
   };
@@ -204,18 +261,21 @@ export default function PortfolioHoldings({
           <div>
             <div className="fl" style={{ marginBottom: 8 }}>Instrument Type</div>
             <div className="tab2" style={{ marginBottom: 10 }}>
-              <button className={`tab2-btn ${form.kind === "stock" ? "active" : ""}`} onClick={() => setForm((prev) => ({ ...prev, kind: "stock", symbol: "", schemeCode: "" }))}>
-                Stock / ETF
-              </button>
-              <button className={`tab2-btn ${form.kind === "mutualFund" ? "active" : ""}`} onClick={() => setForm((prev) => ({ ...prev, kind: "mutualFund", symbol: "", schemeCode: "" }))}>
-                Mutual Fund
-              </button>
+              {KIND_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  className={`tab2-btn ${form.kind === option.id ? "active" : ""}`}
+                  onClick={() => setForm((prev) => ({ ...prev, kind: option.id, symbol: "", schemeCode: "" }))}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
 
             <div className="setting-row" style={{ alignItems: "stretch", marginBottom: 10 }}>
               <input
                 className="setting-input"
-                placeholder={form.kind === "stock" ? "Search stock or type symbol like RELIANCE.BSE" : "Search fund by name, e.g. HDFC Flexi Cap"}
+                placeholder={searchPlaceholder(form.kind)}
                 value={searchState.query}
                 onChange={(e) => setSearchState((prev) => ({ ...prev, query: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
@@ -247,18 +307,18 @@ export default function PortfolioHoldings({
                 <input className="fi" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Reliance Industries, HDFC Flexi Cap..." />
               </div>
               <div className="fg">
-                <label className="fl">{form.kind === "stock" ? "Stock Symbol" : "Scheme Code"}</label>
+                <label className="fl">{symbolLabel(form.kind)}</label>
                 <input
                   className="fi"
-                  value={form.kind === "stock" ? form.symbol : form.schemeCode}
+                  value={form.kind === "mutualFund" ? form.schemeCode : form.symbol}
                   onChange={(e) =>
                     setForm((prev) =>
-                      form.kind === "stock"
-                        ? { ...prev, symbol: e.target.value }
-                        : { ...prev, schemeCode: e.target.value }
+                      form.kind === "mutualFund"
+                        ? { ...prev, schemeCode: e.target.value }
+                        : { ...prev, symbol: e.target.value }
                     )
                   }
-                  placeholder={form.kind === "stock" ? "RELIANCE.BSE or AAPL" : "125497"}
+                  placeholder={symbolPlaceholder(form.kind)}
                 />
               </div>
               <div className="fg">
@@ -279,11 +339,7 @@ export default function PortfolioHoldings({
             </div>
 
             <div className="muted" style={{ marginTop: 10 }}>
-              {form.kind === "stock"
-                ? marketProviders?.alphaVantage
-                  ? "Stock prices use Alpha Vantage daily close data and stay under your free-key budget with manual refresh."
-                  : "Add ALPHA_VANTAGE_API_KEY on the backend to search and refresh stock prices."
-                : "Mutual fund values use the latest NAV from a free AMFI-backed fund feed."}
+              {providerCopy(form.kind, marketProviders)}
             </div>
           </div>
 
@@ -326,11 +382,12 @@ export default function PortfolioHoldings({
               <div>
                 <div className="tx-cat">
                   {item.name}
-                  <span className="tx-badge investment">{item.kind === "mutualFund" ? "Mutual Fund" : "Stock"}</span>
+                  <span className="tx-badge investment">{kindLabel(item.kind)}</span>
                 </div>
                 <div className="tx-note">
                   {item.kind === "mutualFund" ? `Scheme ${item.schemeCode}` : item.symbol}
                   {item.account ? ` • ${item.account}` : ""}
+                  {item.source ? ` • ${item.source}` : ""}
                   {item.priceDate ? ` • ${item.priceLabel || "Latest"} ${item.priceDate}` : ""}
                 </div>
               </div>
@@ -363,7 +420,7 @@ export default function PortfolioHoldings({
         )) : (
           <div className="empty-state">
             <div className="es-icon">📈</div>
-            <p>Add your first stock or mutual fund holding to start daily valuation and P&L tracking.</p>
+            <p>Add your first stock, mutual fund, crypto, or commodity holding to start daily valuation and P&amp;L tracking.</p>
           </div>
         )}
       </div>

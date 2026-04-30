@@ -99,7 +99,7 @@ export default function App() {
   });
   const [backendHealth, setBackendHealth] = useState({
     providers: { anthropic: false, openrouter: false, openai: false },
-    marketProviders: { alphaVantage: false },
+    marketProviders: { alphaVantage: false, twelveData: false, finnhub: false },
     proxyUrl: "http://127.0.0.1:8787",
   });
   const [aiChatMessages, setAiChatMessages] = useState([]);
