@@ -157,6 +157,7 @@ textarea{min-height:92px;resize:vertical}
 .bnav-items{display:flex;justify-content:space-around}
 .bnav-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px;color:var(--text3);font-size:8px;font-weight:600;text-transform:uppercase;cursor:pointer;flex:1}
 .bnav-item.active{color:var(--accent)}.bnav-icon{font-size:16px}.bnav-fab{background:var(--accent);width:42px;height:42px;border-radius:50%;color:#fff;box-shadow:0 8px 22px rgba(200,169,110,.35);margin-top:-11px;cursor:pointer}
+.mobile-more-overlay{display:none}
 .toast{position:fixed;top:20px;right:20px;background:var(--card2);border:1px solid var(--border);border-radius:var(--rx);padding:10px 16px;font-size:12.5px;z-index:9999;animation:toastIn .28s ease;box-shadow:0 10px 40px rgba(0,0,0,.4);max-width:360px}
 .toast.success{border-color:rgba(52,211,153,.4);color:var(--income)}.toast.error{border-color:rgba(248,113,113,.4);color:var(--expense)}.toast.warning{border-color:rgba(200,169,110,.4);color:var(--accent)}
 .login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px;position:relative;overflow:hidden}
@@ -201,6 +202,7 @@ textarea{min-height:92px;resize:vertical}
 .prompt-chip{padding:7px 11px;border-radius:999px;border:1px solid var(--border);background:var(--card2);color:var(--text2);font-size:11px;white-space:nowrap;cursor:pointer;transition:all .16s}
 .prompt-chip:hover{border-color:var(--border-l);color:var(--text)}
 .ai-chat-body{padding:14px 18px;display:grid;gap:10px;height:420px;overflow-y:auto;background:linear-gradient(180deg,rgba(200,169,110,.03),transparent 18%)}
+.ai-chat-compose{padding:14px 18px 18px;border-top:1px solid var(--border);display:grid;gap:10px;background:var(--card)}
 .ai-chat-empty{padding:24px;border:1px dashed var(--border);border-radius:14px;color:var(--text3);font-size:12px;background:var(--card2)}
 .ai-message{max-width:min(88%,720px);display:grid;gap:6px}
 .ai-message.user{justify-self:end}
@@ -227,5 +229,11 @@ textarea{min-height:92px;resize:vertical}
   .ai-chat-body{height:360px;padding:14px}
   .ai-chat-head{padding:16px 14px 10px}
   .ai-message{max-width:100%}
+  .mobile-more-overlay{display:flex;position:fixed;inset:0;background:rgba(9,9,11,.42);backdrop-filter:blur(8px);z-index:300;align-items:flex-end}
+  .mobile-more-sheet{width:100%;background:var(--card);border-top-left-radius:20px;border-top-right-radius:20px;border:1px solid var(--border);border-bottom:none;padding:18px 14px calc(20px + env(safe-area-inset-bottom,0));box-shadow:0 -12px 40px rgba(0,0,0,.18)}
+  .mobile-more-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .mobile-more-item{background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 12px;display:grid;justify-items:start;gap:6px;color:var(--text);font-size:12px;font-weight:600}
+  .mobile-more-item.active{border-color:rgba(200,169,110,.34);background:var(--accent-dim);color:var(--accent)}
+  .mobile-more-icon{font-size:18px}
 }
 `;

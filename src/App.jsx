@@ -81,8 +81,8 @@ export default function App() {
   const [assets, setAssets] = useState([]);
   const [liabilities, setLiabilities] = useState([]);
   const [aiConfig, setAiConfig] = useState({
-    provider: "openai",
-    model: "gpt-4.1-mini",
+    provider: "openrouter",
+    model: "openrouter/free",
     freeModel: "openrouter/free",
   });
   const [backendHealth, setBackendHealth] = useState({
@@ -98,6 +98,7 @@ export default function App() {
     externalText: "",
   });
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(toYYYYMM(new Date()));
   const toastTimerRef = useRef(null);
@@ -636,7 +637,14 @@ export default function App() {
     { id: "add", fab: true },
     { id: "history", icon: "≡", label: "History" },
     { id: "goals", icon: "◎", label: "Goals" },
-    { id: "settings", icon: "⚙", label: "More" },
+    { id: "more", icon: "⚙", label: "More", more: true },
+  ];
+
+  const MOBILE_MORE_ITEMS = [
+    { id: "analytics", icon: "📊", label: "Analytics" },
+    { id: "wealth", icon: "⬢", label: "Net Worth" },
+    { id: "import", icon: "⬆", label: "Import" },
+    { id: "settings", icon: "⚙", label: "Settings" },
   ];
 
   const tabLoadingFallback = (
@@ -843,7 +851,11 @@ export default function App() {
                   <button className="bnav-fab">+</button>
                 </div>
               ) : (
-                <div key={item.id} className={`bnav-item ${activeTab === item.id ? "active" : ""}`} onClick={() => setActiveTab(item.id)}>
+                <div
+                  key={item.id}
+                  className={`bnav-item ${activeTab === item.id || (item.more && MOBILE_MORE_ITEMS.some((x) => x.id === activeTab)) ? "active" : ""}`}
+                  onClick={() => item.more ? setMobileMenuOpen(true) : setActiveTab(item.id)}
+                >
                   <span className="bnav-icon">{item.icon}</span>
                   {item.label}
                 </div>
@@ -851,6 +863,35 @@ export default function App() {
             )}
           </div>
         </nav>
+
+        {mobileMenuOpen && (
+          <div className="mobile-more-overlay" onClick={() => setMobileMenuOpen(false)}>
+            <div className="mobile-more-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="section-head" style={{ marginBottom: 12 }}>
+                <div>
+                  <h3>More</h3>
+                  <p style={{ marginBottom: 0 }}>Quick access to the rest of your finance workspace.</p>
+                </div>
+                <button className="icon-btn" onClick={() => setMobileMenuOpen(false)}>Close</button>
+              </div>
+              <div className="mobile-more-grid">
+                {MOBILE_MORE_ITEMS.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`mobile-more-item ${activeTab === item.id ? "active" : ""}`}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    <span className="mobile-more-icon">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

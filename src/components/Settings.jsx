@@ -83,20 +83,31 @@ export default function Settings({
       <div className="settings-section">
         <h3>AI Proxy Configuration</h3>
         <p>
-          Provider keys now live only on the backend proxy. Configure the provider here, then put real keys in server env vars.
+          Provider keys now live only on the backend proxy. OpenRouter free is the default recommendation for everyday use, while OpenAI and Anthropic are available if you want premium models.
         </p>
         <div className="form-grid">
           <div className="fg">
             <label className="fl">Provider</label>
             <select className="fs" value={aiConfig.provider} onChange={(e) => setAiConfig((s) => ({ ...s, provider: e.target.value }))}>
+              <option value="openrouter">OpenRouter Free Model</option>
               <option value="anthropic">Anthropic Claude</option>
               <option value="openai">OpenAI</option>
-              <option value="openrouter">OpenRouter Free Model</option>
             </select>
           </div>
           <div className="fg">
             <label className="fl">Model</label>
-            <input className="fi" placeholder={aiConfig.provider === "openai" ? "gpt-4.1-mini" : "claude-3-5-haiku-latest"} value={aiConfig.model} onChange={(e) => setAiConfig((s) => ({ ...s, model: e.target.value }))} />
+            <input
+              className="fi"
+              placeholder={
+                aiConfig.provider === "openrouter"
+                  ? "openrouter/free"
+                  : aiConfig.provider === "openai"
+                    ? "gpt-4.1-mini"
+                    : "claude-3-5-haiku-latest"
+              }
+              value={aiConfig.model}
+              onChange={(e) => setAiConfig((s) => ({ ...s, model: e.target.value }))}
+            />
           </div>
           <div className="fg full">
             <label className="fl">Free Model</label>

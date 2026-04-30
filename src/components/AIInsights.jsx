@@ -96,6 +96,38 @@ export default function AIInsights({
                   </div>
                 )}
               </div>
+              <div className="ai-chat-compose">
+                <div className="fg">
+                  <textarea
+                    placeholder="Example: Where can I cut spending next month without hurting my goals?"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                  />
+                </div>
+                <div className="ai-ask-actions">
+                  <button
+                    className="btn-primary"
+                    onClick={async () => {
+                      if (!question.trim()) return;
+                      await onAskQuestion(question.trim());
+                      setQuestion("");
+                    }}
+                    disabled={askLoading}
+                  >
+                    {askLoading ? "Thinking…" : "Ask"}
+                  </button>
+                  <span className="muted">
+                    {backendHealth?.providers?.[aiConfig.provider]
+                      ? `Using secured backend AI via ${modeLabel}.`
+                      : "Using local reasoning because no AI provider key is configured."}
+                  </span>
+                </div>
+                {!backendHealth?.providers?.[aiConfig.provider] && (
+                  <p style={{ fontSize: 11.5, color: "var(--accent)", marginTop: 6 }}>
+                    Current provider <strong>{aiConfig.provider}</strong> is not configured on the backend proxy yet.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="section-card">
@@ -136,43 +168,6 @@ export default function AIInsights({
           </div>
 
           <div className="ai-main-col">
-            <div className="section-card ai-ask-card">
-              <h3>New Question</h3>
-              <div className="fg">
-                <textarea
-                  placeholder="Example: Where can I cut spending next month without hurting my goals?"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                />
-              </div>
-              <div className="ai-ask-actions">
-                <button
-                  className="btn-primary"
-                  onClick={async () => {
-                    if (!question.trim()) return;
-                    await onAskQuestion(question.trim());
-                    setQuestion("");
-                  }}
-                  disabled={askLoading}
-                >
-                  {askLoading ? "Thinking…" : "Ask"}
-                </button>
-                <span className="muted">
-                  {backendHealth?.providers?.[aiConfig.provider]
-                    ? "Using secured backend AI."
-                    : "Using local reasoning because no AI provider key is configured."}
-                </span>
-              </div>
-              <p style={{ fontSize: 11.5, color: "var(--text3)" }}>
-                Engine: <strong style={{ color: "var(--text)" }}>{modeLabel}</strong>
-              </p>
-              {!backendHealth?.providers?.[aiConfig.provider] && (
-                <p style={{ fontSize: 11.5, color: "var(--accent)" }}>
-                  Current provider <strong>{aiConfig.provider}</strong> is not configured on the backend proxy yet.
-                </p>
-              )}
-            </div>
-
             <div className="section-card">
               <h3>Quick Context</h3>
               <div className="stack">
