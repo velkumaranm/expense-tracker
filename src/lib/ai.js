@@ -98,6 +98,7 @@ export function answerLocalFinanceQuestion(question, context, report) {
   const investment = context.totals?.investment || 0;
   const insurance = context.totals?.insurance || 0;
   const netWorth = context.netWorth || 0;
+  const portfolio = context.portfolio || {};
 
   if (q.includes("save") || q.includes("cut") || q.includes("reduce")) {
     return [
@@ -112,6 +113,9 @@ export function answerLocalFinanceQuestion(question, context, report) {
   if (q.includes("invest")) {
     return [
       `You are currently investing ${fmtINR(investment)} in the selected period.`,
+      portfolio.holdingsCount
+        ? `Tracked market holdings are worth ${fmtINR(portfolio.currentValue || 0)} versus an invested basis of ${fmtINR(portfolio.investedValue || 0)}.`
+        : "No live market holdings are being tracked yet, so this answer is based on cash-flow contributions only.",
       report.investmentIdeas[0],
       savingsRate < 10
         ? "I would improve cash-flow stability before taking materially more portfolio risk."

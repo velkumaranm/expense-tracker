@@ -136,7 +136,7 @@ def add_cover(doc: Document):
     note = doc.add_paragraph()
     note.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = note.add_run(
-        "This guide documents the real implementation choices used in the live application, including Firebase authentication, Firestore storage, AI proxy architecture, Vercel serverless deployment, and post-launch performance optimization."
+        "This guide documents the real implementation choices used in the live application, including Firebase authentication, Firestore transaction storage, Firebase-backed profile persistence, AI and market proxy architecture, and Vercel serverless deployment."
     )
     run.italic = True
     run.font.color.rgb = MUTED
@@ -154,16 +154,17 @@ def add_toc(doc: Document):
         "6. Data Model and Core Calculations",
         "7. Authentication System",
         "8. AI Insights Platform",
-        "9. Local Development Workflow",
-        "10. Production Deployment on Vercel",
-        "11. Environment Variables and Secrets",
-        "12. Security and Reliability Decisions",
-        "13. Performance Optimization and Code Splitting",
-        "14. Implementation Journey and Major Decisions",
-        "15. Testing and Validation Checklist",
-        "16. Troubleshooting Reference",
-        "17. File and Folder Reference",
-        "18. Recommended Next Steps",
+        "9. Market Holdings and Valuation Platform",
+        "10. Local Development Workflow",
+        "11. Production Deployment on Vercel",
+        "12. Environment Variables and Secrets",
+        "13. Security and Reliability Decisions",
+        "14. Performance Optimization and Code Splitting",
+        "15. Implementation Journey and Major Decisions",
+        "16. Testing and Validation Checklist",
+        "17. Troubleshooting Reference",
+        "18. File and Folder Reference",
+        "19. Recommended Next Steps",
     ]
     for item in items:
         p = doc.add_paragraph(style="List Bullet")
@@ -227,10 +228,10 @@ def create_diagrams():
 
     draw_box(draw, (60, 120, 470, 360), "React + Vite SPA\nModular finance UI\nLazy-loaded feature views\nTheme system + charts", CARD, BORDER, title="Client App", title_fill=(243, 235, 221), font=font_box, small=font_small)
     draw_box(draw, (560, 120, 980, 360), "Email/password + magic link\nGoogle sign-in\nVerification + reset + email change", CARD, BORDER, title="Firebase Auth", title_fill=(231, 244, 236), font=font_box, small=font_small)
-    draw_box(draw, (1060, 120, 1490, 360), "users/{uid}/expenses\nTransactions live in Firestore\nGoals/assets/liabilities in local storage\nDerived KPIs in app memory", CARD, BORDER, title="Data Layer", title_fill=(237, 240, 255), font=font_box, small=font_small)
+    draw_box(draw, (1060, 120, 1490, 360), "users/{uid}/expenses\nusers/{uid}/meta/appState\nTransactions + profile state in Firestore\nDerived KPIs in app memory", CARD, BORDER, title="Data Layer", title_fill=(237, 240, 255), font=font_box, small=font_small)
     draw_box(draw, (60, 470, 470, 760), "Dashboard\nAI Insights\nAnalytics & Reports\nGoals / Net Worth / Import / Settings", CARD, BORDER, title="Feature Modules", title_fill=(243, 235, 221), font=font_box, small=font_small)
-    draw_box(draw, (560, 470, 980, 760), "Local proxy: server/ai-proxy.mjs\nShared runtime: server/ai-runtime.mjs\n/api/ai/* Vercel functions\nProvider routing + health status", CARD, BORDER, title="AI Runtime", title_fill=(231, 244, 236), font=font_box, small=font_small)
-    draw_box(draw, (1060, 470, 1490, 760), "OpenAI\nOpenRouter\nAnthropic\nBrowser never stores provider keys", CARD, BORDER, title="AI Providers", title_fill=(237, 240, 255), font=font_box, small=font_small)
+    draw_box(draw, (560, 470, 980, 760), "Local proxy: server/ai-proxy.mjs\nShared runtimes: ai-runtime + market-runtime\n/api/ai/* and /api/market/* Vercel functions\nProvider routing + health status", CARD, BORDER, title="Backend Runtime", title_fill=(231, 244, 236), font=font_box, small=font_small)
+    draw_box(draw, (1060, 470, 1490, 760), "OpenAI / OpenRouter / Anthropic\nAlpha Vantage stock API\nAMFI-backed mutual fund NAV feed\nBrowser never stores secret keys", CARD, BORDER, title="External Providers", title_fill=(237, 240, 255), font=font_box, small=font_small)
     draw_box(draw, (560, 850, 1240, 1000), "Deployment target: Vercel\nFrontend served as static app\n/api handlers deployed as serverless functions\nEnvironment variables stored in Vercel project settings", CARD_ALT, BORDER, title="Production Runtime", title_fill=(243, 235, 221), font=font_box, small=font_small)
 
     arrow(draw, (470, 210), (560, 210))
@@ -253,9 +254,11 @@ def create_diagrams():
         ("3. App Refactor", "Large App.jsx split into modular components, shared utilities, and centralized styles."),
         ("4. AI Security", "Client-side keys removed. Local proxy and Vercel serverless API endpoints introduced."),
         ("5. Auth Rework", "Apple and phone OTP removed. Email link, verification, password reset, and email change added."),
-        ("6. UX Polish", "AI workspace refined, onboarding helpers added, goals/net worth upgraded, imports improved."),
-        ("7. Deployment", "Git hygiene fixed, Vercel env vars configured, serverless handlers validated in production."),
-        ("8. Performance", "Lazy-loading and vendor chunk splitting reduced initial bundle size for live traffic."),
+        ("6. Market Holdings", "Portfolio holdings, manual daily refresh, Alpha Vantage stock pricing, and mutual fund NAV valuation added."),
+        ("7. Persistence Upgrade", "Goals, assets, liabilities, holdings, snapshots, and preferences moved from local-only storage into Firebase-backed profile state."),
+        ("8. UX Polish", "AI workspace refined, onboarding helpers added, goals/net worth upgraded, imports improved."),
+        ("9. Deployment", "Git hygiene fixed, Vercel env vars configured, serverless handlers validated in production."),
+        ("10. Performance", "Lazy-loading and vendor chunk splitting reduced initial bundle size for live traffic."),
     ]
     y = 120
     for idx, (title, body) in enumerate(steps):
@@ -306,10 +309,10 @@ def build_document():
     add_toc(doc)
 
     doc.add_heading("1. Product Overview", level=1)
-    add_paragraph(doc, "Finwise is a premium personal finance tracker built as a React single-page application with Firebase for authentication and transaction storage, plus a backend AI proxy for secure model access. The app evolved from a lighter expense tracker into a broader command center covering income, expenses, investments, insurance, goals, net worth, analytics, AI reasoning, import/export, and account controls.")
+    add_paragraph(doc, "Finwise is a premium personal finance tracker built as a React single-page application with Firebase for authentication and data persistence, plus backend AI and market-data runtimes for secure provider access. The app evolved from a lighter expense tracker into a broader command center covering income, expenses, investments, insurance, live-valued market holdings, goals, net worth, analytics, AI reasoning, import/export, and account controls.")
     add_bullets(doc, [
         "The final product is opinionated around practical day-to-day financial management rather than stock-market watching.",
-        "The app is designed to support both manual entry and CSV import, then turn that data into diagnostics, alerts, planning, and AI-assisted explanation.",
+        "The app is designed to support both manual entry and CSV import, then turn that data into diagnostics, alerts, planning, portfolio valuation, and AI-assisted explanation.",
         "The production target is Vercel, with Firebase as the external identity and data backend, and optional AI providers behind serverless endpoints.",
     ])
 
@@ -323,7 +326,7 @@ def build_document():
             ("AI Insights", "Heuristic analysis, provider-backed insights, ask-anything financial Q&A, anomaly view, savings and investment suggestions"),
             ("Analytics", "Twelve-month trend charts, year-over-year comparisons, average metrics, category trend lines, spending heat map, CSV and PDF export"),
             ("Goals", "Goal templates, progress tracking, monthly pace estimation, status flags, contribution actions"),
-            ("Net Worth", "Manual assets, liabilities, liquidity buffer, debt ratio, balance-sheet diagnostics, starter templates"),
+            ("Net Worth", "Manual assets, liabilities, liquidity buffer, debt ratio, balance-sheet diagnostics, starter templates, and live market holdings"),
             ("Import", "CSV upload, column mapping, preview, validation, staged import"),
             ("Settings and Account", "Theme, budget, notifications, AI provider configuration, email verification, password reset, email change"),
         ],
@@ -338,15 +341,15 @@ def build_document():
             ("Frontend", "React 19 + Vite 8", "Fast development loop, simple bundling, strong compatibility with modular SPA structure"),
             ("UI + Visuals", "Custom CSS + Recharts", "Allowed a tailored product style while still supporting premium charts and dashboards"),
             ("Authentication", "Firebase Auth", "Rapid support for email/password, Google sign-in, password reset, email verification, and magic-link sign-in"),
-            ("Data Storage", "Cloud Firestore", "Simple per-user transaction storage with real-time snapshots"),
-            ("AI Proxy", "Node.js server + Vercel serverless functions", "Kept provider keys away from the browser and unified multiple model providers"),
+            ("Data Storage", "Cloud Firestore", "Per-user transaction storage plus Firebase-backed profile state for goals, holdings, assets, liabilities, snapshots, and preferences"),
+            ("Backend Runtime", "Node.js server + Vercel serverless functions", "Kept AI and market-data keys away from the browser and unified runtime behavior across local and deployed environments"),
             ("Deployment", "Vercel", "Straightforward static frontend hosting with `/api` serverless functions and environment variable management"),
         ],
         widths=[Inches(1.2), Inches(1.9), Inches(4.2)],
     )
 
     doc.add_heading("4. High-Level Architecture", level=1)
-    add_paragraph(doc, "The architecture has three major zones: the client app, the backend AI runtime, and the external managed services. Firebase handles identity and transaction storage. The AI runtime handles provider selection and key isolation. The Vercel deployment serves both the frontend bundle and the production API functions.")
+    add_paragraph(doc, "The architecture has four major zones: the client app, Firebase-managed identity and persistence, the backend AI and market runtimes, and the external managed providers. Firebase handles identity, transactions, and profile state. The backend runtimes handle provider selection, market refresh, and key isolation. The Vercel deployment serves both the frontend bundle and the production API functions.")
     add_image_center(doc, ARCH_IMG, 6.8)
     cap = doc.add_paragraph()
     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -355,16 +358,16 @@ def build_document():
     run.font.color.rgb = MUTED
 
     doc.add_heading("5. Frontend Application Design", level=1)
-    add_paragraph(doc, "The main stateful shell lives in `src/App.jsx`. It owns authentication state, transaction subscription, derived metrics, tab routing, AI request orchestration, budget settings, goals, assets, liabilities, and notification toasts. Feature screens are modular React components loaded on demand through lazy loading and a `Suspense` boundary.")
+    add_paragraph(doc, "The main stateful shell lives in `src/App.jsx`. It owns authentication state, transaction subscription, Firebase-backed profile state, derived metrics, tab routing, AI request orchestration, market-holdings persistence, budget settings, goals, assets, liabilities, and notification toasts. Feature screens are modular React components loaded on demand through lazy loading and a `Suspense` boundary.")
     add_bullets(doc, [
         "The app uses one navigation model for desktop sidebar and one for mobile bottom navigation, both driven by the same `activeTab` state.",
         "Feature modules include Dashboard, AIInsights, AnalyticsReports, GoalsTargets, NetWorthTracker, AddForm, History, ImportPage, and Settings.",
-        "Shared logic lives in `src/lib/utils.js`, `src/lib/constants.js`, and `src/lib/ai.js`.",
+        "Shared logic lives in `src/lib/utils.js`, `src/lib/constants.js`, `src/lib/ai.js`, and `src/lib/market.js`.",
         "The CSS is centralized in `src/styles/appStyles.js`, giving the product a consistent visual system across cards, charts, forms, empty states, and premium onboarding surfaces.",
     ])
 
     doc.add_heading("6. Data Model and Core Calculations", level=1)
-    add_paragraph(doc, "Transactions are stored in Firestore under `users/{uid}/expenses`. Each record contains amount, type, category, note, date, recurring, and recurringFrequency. Local storage is used for user-specific non-transaction settings and planning data like goals, assets, liabilities, AI preferences, budget, and notification toggles.")
+    add_paragraph(doc, "Transactions are stored in Firestore under `users/{uid}/expenses`. Each record contains amount, type, category, note, date, recurring, and recurringFrequency. User-owned planning and preference state is stored in Firestore under `users/{uid}/meta/appState`, including goals, manual assets, liabilities, market holdings, portfolio snapshots, AI preferences, budget, and notification toggles. Local storage remains only as a migration fallback and for a few transient sign-in helpers.")
     add_table(
         doc,
         ["Metric", "How it is calculated"],
@@ -372,6 +375,7 @@ def build_document():
             ("Balance", "income - expense - investment - insurance for the selected period"),
             ("Savings Rate", "((income - expense) / income) * 100"),
             ("Tracked Cash", "allTimeIncome - allTimeExpense - allTimeInvestment - allTimeInsurance"),
+            ("Tracked Investments", "nonMarketInvestment + liveHoldingsValue when holdings exist, otherwise cash-ledger market investment total"),
             ("Tracked Net Worth", "trackedCash + trackedInvestments + manualAssetTotal - liabilityTotal"),
             ("Recurring Outflow", "sum of selected-period recurring non-income transactions"),
             ("Budget Progress", "selected-period expense / budget"),
@@ -405,7 +409,27 @@ def build_document():
     )
     add_paragraph(doc, "The browser never stores provider keys. The frontend only chooses provider and model name. Secret keys live in the proxy environment, both locally and in Vercel.")
 
-    doc.add_heading("9. Local Development Workflow", level=1)
+    doc.add_heading("9. Market Holdings and Valuation Platform", level=1)
+    add_paragraph(doc, "Market holdings were added as a real portfolio layer rather than being treated as plain cashflow categories. Users can record stock and mutual-fund holdings separately from transaction entries, then refresh values manually once per day.")
+    add_table(
+        doc,
+        ["Part", "Responsibility"],
+        [
+            ("`src/components/PortfolioHoldings.jsx`", "Holding entry, instrument search, refresh action, portfolio summaries, and snapshot presentation"),
+            ("`src/lib/market.js`", "Frontend API client for market search and refresh"),
+            ("`server/market-runtime.mjs`", "Search stock/mutual-fund instruments and refresh holdings using provider APIs"),
+            ("`api/market/*.js`", "Vercel production handlers for market search and refresh"),
+        ],
+        widths=[Inches(2.2), Inches(5.1)],
+    )
+    add_bullets(doc, [
+        "Stocks use Alpha Vantage daily series data on a manual refresh model to stay within free-tier request limits.",
+        "Mutual funds use a free AMFI-backed NAV feed, which is appropriate for daily refresh instead of intraday pricing.",
+        "Holdings store units, average cost, account/broker context, latest fetched price, current value, invested value, and unrealized P&L.",
+        "Daily snapshot history is stored with the user profile so portfolio value survives restarts and cross-device access.",
+    ])
+
+    doc.add_heading("10. Local Development Workflow", level=1)
     add_paragraph(doc, "Local development ended up with two execution modes: frontend-only via Vite, and combined app-plus-proxy via a helper script. The combined workflow is preferred because AI routes depend on the local proxy.")
     add_table(
         doc,
@@ -420,17 +444,18 @@ def build_document():
     )
     add_paragraph(doc, "The Vite dev server proxies `/api/*` to the local AI proxy, so local AI failures often come down to whether port 8787 is listening. Once that was understood, the stable local workflow became running both services together rather than starting them separately and accidentally losing the proxy.")
 
-    doc.add_heading("10. Production Deployment on Vercel", level=1)
-    add_paragraph(doc, "The frontend deploys to Vercel as a static React application. The backend AI runtime deploys to Vercel by placing handlers in the `/api/ai` directory. This is critical: the local Node proxy used in development is not available automatically in production.")
+    doc.add_heading("11. Production Deployment on Vercel", level=1)
+    add_paragraph(doc, "The frontend deploys to Vercel as a static React application. The backend runtimes deploy to Vercel by placing handlers in the `/api/ai` and `/api/market` directories. This is critical: the local Node proxy used in development is not available automatically in production.")
     add_bullets(doc, [
         "The app frontend is built by Vite and served by Vercel.",
         "The `/api/ai/health`, `/api/ai/insights`, and `/api/ai/query` routes are deployed as Vercel functions.",
+        "The `/api/market/search` and `/api/market/refresh` routes are deployed as Vercel functions for portfolio search and refresh.",
         "The Vercel project stores runtime secrets as environment variables, then the app is redeployed so the new variables are visible to the functions.",
         "Production AI failures were solved by converting handlers to Node-style `export default async function handler(req, res)` functions and redeploying.",
     ])
     add_paragraph(doc, "Deployment also required standard Git hygiene. Secrets accidentally committed to `.env` triggered GitHub push protection. The durable fix was to add `.env` to `.gitignore`, remove it from Git tracking, amend the offending commit, and rotate exposed provider keys.")
 
-    doc.add_heading("11. Environment Variables and Secrets", level=1)
+    doc.add_heading("12. Environment Variables and Secrets", level=1)
     add_table(
         doc,
         ["Variable", "Used for", "Where set"],
@@ -443,21 +468,24 @@ def build_document():
             ("OPENROUTER_MODEL", "OpenRouter model selection", "Local `.env` and Vercel env"),
             ("ANTHROPIC_API_KEY", "Anthropic provider access", "Local `.env` and Vercel env"),
             ("ANTHROPIC_MODEL", "Anthropic model selection", "Local `.env` and Vercel env"),
+            ("ALPHA_VANTAGE_API_KEY", "Stock symbol search and daily price refresh", "Local `.env` and Vercel env"),
         ],
         widths=[Inches(2.2), Inches(2.4), Inches(2.2)],
     )
     add_paragraph(doc, "A useful guardrail was added to backend health reporting: if an OpenAI-style key appears to be stored under `OPENROUTER_API_KEY`, the health payload warns about it. This helped catch a provider mismatch during setup.")
 
-    doc.add_heading("12. Security and Reliability Decisions", level=1)
+    doc.add_heading("13. Security and Reliability Decisions", level=1)
     add_bullets(doc, [
         "Provider keys were moved out of the browser and into backend env vars.",
+        "Free market-data usage is limited to manual refresh and a small daily volume, which keeps stock pricing practical without paid infrastructure.",
         "Email-link auth replaced more fragile phone and Apple experiments for this product context.",
         "Git tracking of `.env` was removed to satisfy push protection and reduce accidental exposure.",
         "The app falls back to local heuristics when provider-backed AI is unavailable, so users still receive useful financial guidance.",
         "The account area includes verification, password reset, and email change to make identity management feel complete rather than bolted on.",
+        "User-owned planning state now persists in Firebase instead of depending only on browser-local storage, so it survives dev-server restarts and cross-device sign-in.",
     ])
 
-    doc.add_heading("13. Performance Optimization and Code Splitting", level=1)
+    doc.add_heading("14. Performance Optimization and Code Splitting", level=1)
     add_paragraph(doc, "Once the live app was stable, the next improvement was performance. The app had grown large enough that a single big production bundle was no longer ideal. The final step was to lazy-load feature screens and split vendor chunks by responsibility.")
     add_table(
         doc,
@@ -471,7 +499,7 @@ def build_document():
     )
     add_paragraph(doc, "After optimization, the main app shell bundle dropped into a much healthier range, with charting and Firebase each living in their own chunks instead of being paid on first paint.")
 
-    doc.add_heading("14. Implementation Journey and Major Decisions", level=1)
+    doc.add_heading("15. Implementation Journey and Major Decisions", level=1)
     add_image_center(doc, FLOW_IMG, 6.9)
     cap = doc.add_paragraph()
     cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -480,23 +508,26 @@ def build_document():
     run.font.color.rgb = MUTED
     add_paragraph(doc, "The project evolved in layers rather than one rewrite. First the finance surface area expanded. Then the giant root component was split into modular screens. Then AI security moved server-side. Then the auth model was simplified. Finally, the UX and performance passes tightened the product for real-world use.")
 
-    doc.add_heading("15. Testing and Validation Checklist", level=1)
+    doc.add_heading("16. Testing and Validation Checklist", level=1)
     add_bullets(doc, [
         "Build verification with `npm run build` after each meaningful implementation phase",
         "Health checks against local AI proxy and Vite-proxied `/api/ai/health`",
+        "Market search and refresh verification against local `/api/market/*` routes",
         "End-to-end AI query checks against configured providers",
         "Authentication checks for email/password, Google, magic-link completion, password reset, and verification flows",
         "Visual refinement of AI layouts, dashboard diagnostics, and settings/account flows",
         "Production validation on Vercel after env changes and handler updates",
     ])
 
-    doc.add_heading("16. Troubleshooting Reference", level=1)
+    doc.add_heading("17. Troubleshooting Reference", level=1)
     add_table(
         doc,
         ["Symptom", "Likely cause", "Recommended fix"],
         [
             ("`ECONNREFUSED 127.0.0.1:8787` in local AI requests", "Local proxy not running", "Use `npm run dev:full` or start `npm run proxy` separately"),
             ("AI falls back to local reasoning in Vercel", "No deployed `/api` runtime, missing env vars, or no redeploy", "Ensure `api/ai/*` exists, env vars are set in Vercel, and trigger a new deployment"),
+            ("Market holdings vanish after a server restart", "State only existed in browser storage or pre-migration local data", "Persist holdings in Firebase-backed `meta/appState` and let the first authenticated load migrate local fallback state"),
+            ("Stock refresh/search fails", "Missing Alpha Vantage key or free-tier provider response issue", "Add `ALPHA_VANTAGE_API_KEY`, check daily limits, and retry manual refresh"),
             ("Magic link shows success but email appears missing", "Delivery landed in Promotions or Spam", "Check inbox tabs and spam folder, then brand templates later if needed"),
             ("Phone test numbers work but real OTP fails", "Firebase production SMS constraints and billing/setup complexity", "Remove or deprioritize phone OTP for this product"),
             ("GitHub push rejected", "Secret detected in commit history", "Remove `.env` from tracking, amend commit, rotate keys, push again"),
@@ -505,32 +536,36 @@ def build_document():
         widths=[Inches(2.2), Inches(2.3), Inches(2.9)],
     )
 
-    doc.add_heading("17. File and Folder Reference", level=1)
+    doc.add_heading("18. File and Folder Reference", level=1)
     add_table(
         doc,
         ["Path", "Role"],
         [
             ("`src/App.jsx`", "Stateful app shell, routing by tab, derived metrics, auth orchestration"),
             ("`src/components/*`", "Feature modules: dashboard, AI, analytics, goals, net worth, import, history, settings, login"),
+            ("`src/components/PortfolioHoldings.jsx`", "Dedicated holdings entry, price refresh, and portfolio summary surface"),
             ("`src/lib/utils.js`", "Formatting helpers, date logic, pie aggregation, storage keys"),
             ("`src/lib/ai.js`", "Heuristic report generation and frontend AI request helpers"),
+            ("`src/lib/market.js`", "Frontend market search and refresh API helpers"),
             ("`src/styles/appStyles.js`", "Global visual system"),
             ("`src/firebase.js`", "Firebase bootstrapping"),
             ("`server/ai-runtime.mjs`", "Shared provider runtime and health logic"),
+            ("`server/market-runtime.mjs`", "Shared market search and refresh runtime"),
             ("`server/ai-proxy.mjs`", "Local development AI proxy"),
             ("`api/ai/*.js`", "Production serverless AI handlers for Vercel"),
+            ("`api/market/*.js`", "Production serverless market-data handlers for Vercel"),
             ("`vite.config.js`", "Dev proxy rules plus vendor chunk splitting"),
         ],
         widths=[Inches(2.3), Inches(5.2)],
     )
 
-    doc.add_heading("18. Recommended Next Steps", level=1)
+    doc.add_heading("19. Recommended Next Steps", level=1)
     add_bullets(doc, [
         "Brand the Firebase email templates so inbox trust is stronger and magic-link delivery feels more polished.",
         "Introduce optional recurring automation or reminders based on budgets and goal pace.",
         "Add richer onboarding data seeding for first-time users importing from bank statements.",
         "Track release metrics such as AI usage, import completion rate, and goal creation rate after launch.",
-        "Consider a dedicated backend persistence layer for goals, assets, and settings if cross-device state consistency becomes a higher priority.",
+        "Extend market coverage with richer symbol hints, holding edit flows, and portfolio performance attribution once the core daily-refresh model is stable.",
     ])
 
     appendix = doc.add_section(WD_SECTION.NEW_PAGE)
@@ -540,10 +575,11 @@ def build_document():
         "1. Confirm Firebase Authentication methods are enabled: Email/Password, Google, and Email Link.",
         "2. Confirm Firestore rules and project configuration are correct.",
         "3. Add provider keys in Vercel Project Settings -> Environment Variables.",
-        "4. Redeploy after env changes.",
-        "5. Validate `/api/ai/health` in production.",
-        "6. Test sign-in, AI query, transaction add, import, analytics, goals, and net worth flows.",
-        "7. Check browser console and Vercel function logs for any last-mile failures.",
+        "4. Add `ALPHA_VANTAGE_API_KEY` if market holdings refresh should work in production.",
+        "5. Redeploy after env changes.",
+        "6. Validate `/api/ai/health` and `/api/market/search` in production.",
+        "7. Test sign-in, AI query, transaction add, import, analytics, goals, net worth, holdings refresh, and persistence reload flows.",
+        "8. Check browser console and Vercel function logs for any last-mile failures.",
     ])
 
     doc.save(OUTPUT_DOCX)

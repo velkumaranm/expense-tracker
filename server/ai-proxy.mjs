@@ -4,6 +4,10 @@ import {
   healthPayload,
   runProvider,
 } from "./ai-runtime.mjs";
+import {
+  refreshMarketHoldings,
+  searchMarketInstruments,
+} from "./market-runtime.mjs";
 
 loadLocalEnv();
 
@@ -42,6 +46,30 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && req.url === "/api/ai/health") {
     json(res, 200, healthPayload());
+    return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/market/search")) {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const kind = url.searchParams.get("kind") || "stock";
+      const q = url.searchParams.get("q") || "";
+      const results = await searchMarketInstruments(kind, q);
+      json(res, 200, { ok: true, results });
+    } catch (error) {
+      json(res, 500, { ok: false, error: error.message || "Market search failed" });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/market/refresh") {
+    try {
+      const body = await readBody(req);
+      const payload = await refreshMarketHoldings(body.holdings || []);
+      json(res, 200, { ok: true, ...payload });
+    } catch (error) {
+      json(res, 500, { ok: false, error: error.message || "Market refresh failed" });
+    }
     return;
   }
 

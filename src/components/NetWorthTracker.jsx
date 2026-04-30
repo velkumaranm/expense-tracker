@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { fmtINR, goalId } from "../lib/utils";
+import PortfolioHoldings from "./PortfolioHoldings";
 
 const WEALTH_COLORS = ["#34D399", "#818CF8", "#C8A96E", "#F87171"];
 const ASSET_TEMPLATES = [
@@ -19,6 +20,12 @@ export default function NetWorthTracker({
   setAssets,
   liabilities,
   setLiabilities,
+  holdings,
+  setHoldings,
+  snapshots,
+  setSnapshots,
+  marketProviders,
+  showToast,
   trackedCash,
   trackedInvestments,
   netWorth,
@@ -72,7 +79,7 @@ export default function NetWorthTracker({
         <div className="summary-card summary-span-3">
           <div className="sc-label">Tracked Investments</div>
           <div className="sc-value" style={{ color: "var(--invest)" }}>{fmtINR(trackedInvestments)}</div>
-          <div className="sc-sub">Capital deployed through the transaction ledger.</div>
+          <div className="sc-sub">Non-market investments plus live-valued market holdings.</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">Liquidity Buffer</div>
@@ -155,6 +162,15 @@ export default function NetWorthTracker({
           </div>
         </div>
       </div>
+
+      <PortfolioHoldings
+        holdings={holdings}
+        setHoldings={setHoldings}
+        snapshots={snapshots}
+        setSnapshots={setSnapshots}
+        marketProviders={marketProviders}
+        showToast={showToast}
+      />
 
       <div className="two-col">
         <div className="stack">

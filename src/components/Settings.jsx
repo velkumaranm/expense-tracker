@@ -128,6 +128,18 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
+        <h3>Market Data</h3>
+        <p>
+          Finwise can refresh stock holdings with Alpha Vantage and mutual funds with a free AMFI-backed NAV feed. Stock quotes stay server-side, just like AI keys.
+        </p>
+        <div style={{ fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
+          Alpha Vantage key: <strong style={{ color: backendHealth?.marketProviders?.alphaVantage ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.alphaVantage ? "configured" : "missing"}</strong><br />
+          Mutual fund NAV feed: <strong style={{ color: "var(--income)" }}>available</strong><br />
+          Refresh model: <strong style={{ color: "var(--text)" }}>manual, daily-friendly</strong>
+        </div>
+      </div>
+
+      <div className="settings-section">
         <h3>Account</h3>
         <p>
           Signed in as <strong style={{ color: "var(--text)" }}>{user?.email || "Google User"}</strong>

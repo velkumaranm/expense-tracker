@@ -33,6 +33,9 @@ export function healthPayload() {
       openrouter: Boolean(process.env.OPENROUTER_API_KEY),
       openai: Boolean(process.env.OPENAI_API_KEY),
     },
+    marketProviders: {
+      alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
+    },
     warnings: {
       likelyOpenAIKeyStoredAsOpenRouter:
         !process.env.OPENAI_API_KEY && (process.env.OPENROUTER_API_KEY || "").startsWith("sk-"),

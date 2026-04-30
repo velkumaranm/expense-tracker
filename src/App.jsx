@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { auth, db } from "./firebase";
 import {
   signInWithEmailAndPassword,
@@ -21,6 +21,7 @@ import {
   onSnapshot,
   deleteDoc,
   doc,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import LoginPage from "./components/LoginPage";
@@ -54,6 +55,15 @@ const GoalsTargets = lazy(() => import("./components/GoalsTargets"));
 const NetWorthTracker = lazy(() => import("./components/NetWorthTracker"));
 const Settings = lazy(() => import("./components/Settings"));
 
+const LIVE_MARKET_CATEGORIES = new Set([
+  "Stocks — NSE/BSE",
+  "Stocks — US",
+  "Mutual Fund — Equity",
+  "Mutual Fund — Debt",
+  "Mutual Fund — Hybrid",
+  "Index Fund / ETF",
+]);
+
 export default function App() {
   const emailActionSettings = {
     url: window.location.origin,
@@ -80,6 +90,8 @@ export default function App() {
   const [goals, setGoals] = useState([]);
   const [assets, setAssets] = useState([]);
   const [liabilities, setLiabilities] = useState([]);
+  const [holdings, setHoldings] = useState([]);
+  const [portfolioSnapshots, setPortfolioSnapshots] = useState([]);
   const [aiConfig, setAiConfig] = useState({
     provider: "openrouter",
     model: "openrouter/free",
@@ -87,6 +99,7 @@ export default function App() {
   });
   const [backendHealth, setBackendHealth] = useState({
     providers: { anthropic: false, openrouter: false, openai: false },
+    marketProviders: { alphaVantage: false },
     proxyUrl: "http://127.0.0.1:8787",
   });
   const [aiChatMessages, setAiChatMessages] = useState([]);
@@ -103,6 +116,8 @@ export default function App() {
   const [selectedMonth, setSelectedMonth] = useState(toYYYYMM(new Date()));
   const toastTimerRef = useRef(null);
   const latestAlertsRef = useRef("");
+  const profileReadyRef = useRef(false);
+  const lastProfileSerializedRef = useRef("");
 
   useEffect(() => {
     document.body.classList.toggle("light", !darkMode);
@@ -157,16 +172,86 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const uid = user.uid;
-    setGoals(safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []));
-    setAssets(safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []));
-    setLiabilities(safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []));
-    setAiConfig((prev) => ({ ...prev, ...safeJSON(localStorage.getItem(getStorageKey(uid, "ai-config")), {}) }));
-    const savedBudget = localStorage.getItem(getStorageKey(uid, "budget")) || "";
-    setBudget(savedBudget);
-    setBudgetInput(savedBudget);
-    const savedNotif = localStorage.getItem(getStorageKey(uid, "notifications"));
-    setNotificationsEnabled(savedNotif == null ? true : savedNotif === "true");
+    const profileRef = doc(db, "users", uid, "meta", "appState");
+    profileReadyRef.current = false;
+    return onSnapshot(profileRef, async (snap) => {
+      const localFallback = {
+        goals: safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []),
+        assets: safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []),
+        liabilities: safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []),
+        holdings: safeJSON(localStorage.getItem(getStorageKey(uid, "holdings")), []),
+        portfolioSnapshots: safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots")), []),
+        aiConfig: { provider: "openrouter", model: "openrouter/free", freeModel: "openrouter/free", ...safeJSON(localStorage.getItem(getStorageKey(uid, "ai-config")), {}) },
+        budget: localStorage.getItem(getStorageKey(uid, "budget")) || "",
+        notificationsEnabled: (() => {
+          const savedNotif = localStorage.getItem(getStorageKey(uid, "notifications"));
+          return savedNotif == null ? true : savedNotif === "true";
+        })(),
+      };
+
+      const data = snap.exists()
+        ? {
+            ...localFallback,
+            ...snap.data(),
+            aiConfig: { ...localFallback.aiConfig, ...(snap.data()?.aiConfig || {}) },
+          }
+        : localFallback;
+
+      setGoals(Array.isArray(data.goals) ? data.goals : []);
+      setAssets(Array.isArray(data.assets) ? data.assets : []);
+      setLiabilities(Array.isArray(data.liabilities) ? data.liabilities : []);
+      setHoldings(Array.isArray(data.holdings) ? data.holdings : []);
+      setPortfolioSnapshots(Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []);
+      setAiConfig(data.aiConfig || localFallback.aiConfig);
+      setBudget(data.budget || "");
+      setBudgetInput(data.budget || "");
+      setNotificationsEnabled(data.notificationsEnabled !== false);
+
+      lastProfileSerializedRef.current = JSON.stringify({
+        goals: Array.isArray(data.goals) ? data.goals : [],
+        assets: Array.isArray(data.assets) ? data.assets : [],
+        liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
+        holdings: Array.isArray(data.holdings) ? data.holdings : [],
+        portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
+        aiConfig: data.aiConfig || localFallback.aiConfig,
+        budget: data.budget || "",
+        notificationsEnabled: data.notificationsEnabled !== false,
+      });
+      profileReadyRef.current = true;
+
+      if (!snap.exists()) {
+        await setDoc(profileRef, {
+          goals: Array.isArray(data.goals) ? data.goals : [],
+          assets: Array.isArray(data.assets) ? data.assets : [],
+          liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
+          holdings: Array.isArray(data.holdings) ? data.holdings : [],
+          portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
+          aiConfig: data.aiConfig || localFallback.aiConfig,
+          budget: data.budget || "",
+          notificationsEnabled: data.notificationsEnabled !== false,
+        });
+      }
+    });
   }, [user]);
+
+  const profileState = useMemo(() => ({
+    goals,
+    assets,
+    liabilities,
+    holdings,
+    portfolioSnapshots,
+    aiConfig,
+    budget,
+    notificationsEnabled,
+  }), [goals, assets, liabilities, holdings, portfolioSnapshots, aiConfig, budget, notificationsEnabled]);
+
+  useEffect(() => {
+    if (!user || !profileReadyRef.current) return;
+    const nextSerialized = JSON.stringify(profileState);
+    if (nextSerialized === lastProfileSerializedRef.current) return;
+    lastProfileSerializedRef.current = nextSerialized;
+    setDoc(doc(db, "users", user.uid, "meta", "appState"), profileState, { merge: true }).catch(() => {});
+  }, [profileState, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -180,6 +265,14 @@ export default function App() {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "liabilities"), JSON.stringify(liabilities));
   }, [liabilities, user]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "holdings"), JSON.stringify(holdings));
+  }, [holdings, user]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "portfolio-snapshots"), JSON.stringify(portfolioSnapshots));
+  }, [portfolioSnapshots, user]);
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "ai-config"), JSON.stringify(aiConfig));
@@ -335,8 +428,27 @@ export default function App() {
   const allTimeExpense = sumByType(expenses, "expense");
   const allTimeInvestment = sumByType(expenses, "investment");
   const allTimeInsurance = sumByType(expenses, "insurance");
+  const allTimeMarketInvestment = expenses
+    .filter((item) => item.type === "investment" && LIVE_MARKET_CATEGORIES.has(item.category))
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const nonMarketInvestment = Math.max(0, allTimeInvestment - allTimeMarketInvestment);
+  const liveHoldingsValue = holdings.reduce(
+    (sum, item) =>
+      sum +
+      Number(
+        item.currentValue ||
+        item.investedValue ||
+        (Number(item.units || 0) * Number(item.costPerUnit || 0))
+      ),
+    0
+  );
+  const portfolioInvestedValue = holdings.reduce(
+    (sum, item) => sum + Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)),
+    0
+  );
+  const portfolioGainLoss = liveHoldingsValue - portfolioInvestedValue;
   const trackedCash = allTimeIncome - allTimeExpense - allTimeInvestment - allTimeInsurance;
-  const trackedInvestments = allTimeInvestment;
+  const trackedInvestments = nonMarketInvestment + (holdings.length ? liveHoldingsValue : allTimeMarketInvestment);
   const manualAssetTotal = assets.reduce((s, x) => s + Number(x.value || 0), 0);
   const liabilityTotal = liabilities.reduce((s, x) => s + Number(x.value || 0), 0);
   const netWorth = trackedCash + trackedInvestments + manualAssetTotal - liabilityTotal;
@@ -506,6 +618,12 @@ export default function App() {
             monthlySeries: monthlySeries.slice(-6),
             yoyComparison,
             netWorth,
+            portfolio: {
+              holdingsCount: holdings.length,
+              currentValue: liveHoldingsValue,
+              investedValue: portfolioInvestedValue,
+              gainLoss: portfolioGainLoss,
+            },
           },
         });
         externalText = response.text || "";
@@ -528,6 +646,12 @@ export default function App() {
       monthlySeries: monthlySeries.slice(-6),
       yoyComparison,
       netWorth,
+      portfolio: {
+        holdingsCount: holdings.length,
+        currentValue: liveHoldingsValue,
+        investedValue: portfolioInvestedValue,
+        gainLoss: portfolioGainLoss,
+      },
     };
     const userMsg = { id: crypto.randomUUID(), role: "user", text: question, mode: "question" };
     setAiChatMessages((prev) => [...prev, userMsg]);
@@ -676,7 +800,7 @@ export default function App() {
           unusualTransactions={unusualTransactions}
           goals={goals}
           totalTransactions={expenses.length}
-          assetCount={assets.length}
+          assetCount={assets.length + holdings.length}
           liabilityCount={liabilities.length}
           onJumpToAdd={() => setActiveTab("add")}
           onJumpToImport={() => setActiveTab("import")}
@@ -726,6 +850,12 @@ export default function App() {
           trackedCash={trackedCash}
           trackedInvestments={trackedInvestments}
           netWorth={netWorth}
+          holdings={holdings}
+          setHoldings={setHoldings}
+          snapshots={portfolioSnapshots}
+          setSnapshots={setPortfolioSnapshots}
+          marketProviders={backendHealth.marketProviders}
+          showToast={showToast}
         />
       );
     }
