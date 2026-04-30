@@ -12,6 +12,21 @@ const emptyForm = {
   account: "",
 };
 
+function normalizeHoldingError(message) {
+  const text = String(message || "").trim();
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("alphavantage") ||
+    lower.includes("alpha vantage") ||
+    lower.includes("please consider spreading out your free api requests") ||
+    lower.includes("rate limit")
+  ) {
+    return "Alpha Vantage free-tier limit was hit. Wait a bit and try again.";
+  }
+  return text;
+}
+
 function toLocalStamp(iso) {
   if (!iso) return "Not refreshed yet";
   try {
@@ -337,13 +352,13 @@ export default function PortfolioHoldings({
               </div>
               <div className="mini-stat">
                 <span>Refresh Status</span>
-                <strong>{item.refreshError ? "Needs attention" : item.refreshedAt ? "Updated" : "Pending"}</strong>
+                <strong>{normalizeHoldingError(item.refreshError) ? "Needs attention" : item.refreshedAt ? "Updated" : "Pending"}</strong>
               </div>
               <div className="portfolio-actions">
                 <button className="tx-btn del" onClick={() => removeHolding(item.id)}>Delete</button>
               </div>
             </div>
-            {item.refreshError && <div className="auth-error" style={{ marginTop: 10, marginBottom: 0 }}>{item.refreshError}</div>}
+            {normalizeHoldingError(item.refreshError) && <div className="auth-error" style={{ marginTop: 10, marginBottom: 0 }}>{normalizeHoldingError(item.refreshError)}</div>}
           </div>
         )) : (
           <div className="empty-state">

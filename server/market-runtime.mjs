@@ -1,5 +1,8 @@
 const MFAPI_BASE = "https://api.mfapi.in";
 const ALPHA_BASE = "https://www.alphavantage.co/query";
+const ALPHA_MIN_INTERVAL_MS = 1200;
+
+let lastAlphaRequestAt = 0;
 
 function toUrl(path, params = {}) {
   const url = new URL(path);
@@ -12,6 +15,20 @@ function toUrl(path, params = {}) {
 function normalizeNumber(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeMarketError(message) {
+  const text = String(message || "").trim();
+  const lower = text.toLowerCase();
+  if (
+    lower.includes("alphavantage") ||
+    lower.includes("alpha vantage") ||
+    lower.includes("please consider spreading out your free api requests") ||
+    lower.includes("rate limit")
+  ) {
+    return "Alpha Vantage free-tier limit was hit. Wait a bit and try again.";
+  }
+  return text || "Refresh failed";
 }
 
 function readAlphaDailyPoint(payload) {
@@ -38,6 +55,25 @@ async function fetchJson(url) {
   return data;
 }
 
+async function wait(ms) {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchAlphaJson(params) {
+  const elapsed = Date.now() - lastAlphaRequestAt;
+  if (elapsed < ALPHA_MIN_INTERVAL_MS) {
+    await wait(ALPHA_MIN_INTERVAL_MS - elapsed);
+  }
+  lastAlphaRequestAt = Date.now();
+  const data = await fetchJson(toUrl(ALPHA_BASE, params));
+  const throttleMessage = data?.Note || data?.Information || "";
+  if (typeof throttleMessage === "string" && throttleMessage.toLowerCase().includes("please consider spreading out your api requests")) {
+    throw new Error(normalizeMarketError(throttleMessage));
+  }
+  return data;
+}
+
 export async function searchMarketInstruments(kind, query) {
   const q = (query || "").trim();
   if (!q) return [];
@@ -59,12 +95,11 @@ export async function searchMarketInstruments(kind, query) {
 
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
   if (!apiKey) throw new Error("ALPHA_VANTAGE_API_KEY is not configured");
-  const url = toUrl(ALPHA_BASE, {
+  const data = await fetchAlphaJson({
     function: "SYMBOL_SEARCH",
     keywords: q,
     apikey: apiKey,
   });
-  const data = await fetchJson(url);
   return (data?.bestMatches || []).slice(0, 8).map((item) => ({
     id: item["1. symbol"],
     kind: "stock",
@@ -106,13 +141,12 @@ async function refreshStockHolding(holding) {
   if (!symbol) throw new Error(`Missing symbol for ${holding.name || "stock holding"}`);
   const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
   if (!apiKey) throw new Error("ALPHA_VANTAGE_API_KEY is not configured");
-  const url = toUrl(ALPHA_BASE, {
+  const data = await fetchAlphaJson({
     function: "TIME_SERIES_DAILY",
     symbol,
     outputsize: "compact",
     apikey: apiKey,
   });
-  const data = await fetchJson(url);
   const latest = readAlphaDailyPoint(data);
   const units = normalizeNumber(holding.units);
   const investedValue = units * normalizeNumber(holding.costPerUnit);
@@ -163,10 +197,10 @@ export async function refreshMarketHoldings(holdings = []) {
     } catch (error) {
       refreshed.push({
         ...holding,
-        refreshError: error.message || "Refresh failed",
+        refreshError: normalizeMarketError(error.message),
         refreshedAt: new Date().toISOString(),
       });
-      results.push({ id: holding.id, ok: false, name: holding.name || holding.symbol, error: error.message || "Refresh failed" });
+      results.push({ id: holding.id, ok: false, name: holding.name || holding.symbol, error: normalizeMarketError(error.message) });
     }
   }
 
