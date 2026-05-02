@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { fmtINR } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 export default function AIInsights({
   report,
@@ -15,6 +16,7 @@ export default function AIInsights({
   onClearChat,
   askLoading,
 }) {
+  const { t } = useI18n();
   const [question, setQuestion] = useState("");
   const modeLabel = backendHealth?.providers?.[aiConfig.provider]
     ? aiConfig.provider === "anthropic"
@@ -34,29 +36,29 @@ export default function AIInsights({
     <>
       <div className="page-header">
         <div>
-          <h1>AI Insights</h1>
-          <p>Personalized financial intelligence powered by your transaction graph.</p>
+          <h1>{t("ai.title", "AI Insights")}</h1>
+          <p>{t("ai.subtitle", "Personalized financial intelligence powered by your transaction graph.")}</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {!!chatMessages.length && <button className="icon-btn" onClick={onClearChat}>Clear Chat</button>}
+          {!!chatMessages.length && <button className="icon-btn" onClick={onClearChat}>{t("ai.clear", "Clear Chat")}</button>}
           <button className="btn-primary" onClick={onGenerate} disabled={aiState.loading}>
-            {aiState.loading ? "Analyzing…" : "Refresh Insights"}
+            {aiState.loading ? "Analyzing…" : t("ai.refresh", "Refresh Insights")}
           </button>
         </div>
       </div>
 
       <div className="summary-grid">
         <div className="summary-card summary-span-6">
-          <div className="sc-label">Top Spend Bucket</div>
+          <div className="sc-label">{t("ai.topSpendBucket", "Top Spend Bucket")}</div>
           <div className="sc-value" style={{ color: "var(--expense)" }}>{topCategories[0] ? fmtINR(topCategories[0].value) : "—"}</div>
-          <div className="sc-sub">{topCategories[0]?.name || "No expense data yet"}</div>
+          <div className="sc-sub">{topCategories[0]?.name || t("ai.topSpendEmpty", "No expense data yet")}</div>
         </div>
         <div className="summary-card summary-span-6">
-          <div className="sc-label">Savings Rate</div>
+          <div className="sc-label">{t("dashboard.savingsRateLabel", "Savings Rate")}</div>
           <div className="sc-value" style={{ color: totals.savingsRate >= 20 ? "var(--income)" : "var(--accent)" }}>
             {totals.income > 0 ? `${totals.savingsRate.toFixed(1)}%` : "—"}
           </div>
-          <div className="sc-sub">Used for savings, investment, and risk recommendations.</div>
+          <div className="sc-sub">{t("ai.savingsRateCardSub", "Used for savings, investment, and risk recommendations.")}</div>
         </div>
       </div>
 
@@ -68,7 +70,7 @@ export default function AIInsights({
             <div className="ai-main-col">
               <div className="section-card ai-chat-card">
                 <div className="ai-chat-head">
-                  <h3>Ask Finwise AI</h3>
+                  <h3>{t("ai.askTitle", "Ask Finwise AI")}</h3>
                   <p className="ai-chat-sub">
                     Ask about savings, unusual spending, investing, insurance, goals, or net worth. The answer uses your live financial context.
                   </p>
@@ -93,7 +95,7 @@ export default function AIInsights({
                     ))
                   ) : (
                     <div className="ai-chat-empty">
-                      No questions yet. Start with something specific like "Where can I reduce spending next month?" or "Am I investing enough relative to my income?"
+                      {t("ai.noQuestions", "No questions yet. Start with something specific like \"Where can I reduce spending next month?\" or \"Am I investing enough relative to my income?\"")}
                     </div>
                   )}
                 </div>
@@ -115,7 +117,7 @@ export default function AIInsights({
                       }}
                       disabled={askLoading}
                     >
-                      {askLoading ? "Thinking…" : "Ask"}
+                      {askLoading ? "Thinking…" : t("ai.ask", "Ask")}
                     </button>
                     <span className="muted">
                       {backendHealth?.providers?.[aiConfig.provider]
@@ -134,14 +136,14 @@ export default function AIInsights({
 
             <div className="ai-main-col">
               <div className="section-card">
-                <h3>Quick Context</h3>
+                <h3>{t("ai.quickContext", "Quick Context")}</h3>
                 <div className="stack">
                   {report.summary.map((line) => <div key={line} className="stat-line"><span>{line}</span></div>)}
                 </div>
               </div>
 
               <div className="section-card">
-                <h3>Overview</h3>
+                <h3>{t("ai.overview", "Overview")}</h3>
                 <p style={{ marginBottom: 12 }}>{report.headline}</p>
                 <div className="stack">
                   {report.summary.map((line) => <div key={line} className="stat-line"><span>{line}</span></div>)}
@@ -150,7 +152,7 @@ export default function AIInsights({
 
               {!!aiState.externalText && (
                 <div className="section-card">
-                  <h3>Model Notes</h3>
+                  <h3>{t("ai.modelNotes", "Model Notes")}</h3>
                   <p style={{ whiteSpace: "pre-wrap" }}>{aiState.externalText}</p>
                 </div>
               )}
@@ -159,11 +161,11 @@ export default function AIInsights({
 
           <div className="ai-insights-grid">
             <div className="section-card">
-              <h3>Next Best Moves</h3>
+              <h3>{t("ai.nextMoves", "Next Best Moves")}</h3>
               <div className="insight-list">
                 {report.tips.map((item) => (
                   <div key={item} className="insight-item">
-                    <strong>Action</strong>
+                    <strong>{t("ai.action", "Action")}</strong>
                     <p>{item}</p>
                   </div>
                 ))}
@@ -171,11 +173,11 @@ export default function AIInsights({
             </div>
 
             <div className="section-card">
-              <h3>Savings Opportunities</h3>
+              <h3>{t("ai.savingsOpp", "Savings Opportunities")}</h3>
               <div className="insight-list">
                 {report.opportunities.map((item) => (
                   <div key={item} className="insight-item">
-                    <strong>Opportunity</strong>
+                    <strong>{t("ai.opportunity", "Opportunity")}</strong>
                     <p>{item}</p>
                   </div>
                 ))}
@@ -183,11 +185,11 @@ export default function AIInsights({
             </div>
 
             <div className="section-card">
-              <h3>Investment Guidance</h3>
+              <h3>{t("ai.investGuidance", "Investment Guidance")}</h3>
               <div className="insight-list">
                 {report.investmentIdeas.map((item) => (
                   <div key={item} className="insight-item">
-                    <strong>Portfolio Nudge</strong>
+                    <strong>{t("ai.portfolioNudge", "Portfolio Nudge")}</strong>
                     <p>{item}</p>
                   </div>
                 ))}
@@ -195,24 +197,24 @@ export default function AIInsights({
             </div>
 
             <div className="section-card">
-              <h3>Anomaly Watch</h3>
+              <h3>{t("ai.anomalyWatch", "Anomaly Watch")}</h3>
               {report.anomalies.length ? (
                 <div className="insight-list">
                   {report.anomalies.map((item) => (
                     <div key={item} className="alert-item warn">
-                      <strong>Unusual Spend</strong>
+                      <strong>{t("ai.unusualSpendLabel", "Unusual Spend")}</strong>
                       <p>{item}</p>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p>No unusual transactions were flagged in the current scan.</p>
+                <p>{t("ai.noAnomalies", "No unusual transactions were flagged in the current scan.")}</p>
               )}
             </div>
 
             {unusualTransactions.length > 0 && (
               <div className="section-card">
-                <h3>Flagged Transactions</h3>
+                <h3>{t("ai.flaggedTx", "Flagged Transactions")}</h3>
                 <div className="stack">
                   {unusualTransactions.map((t) => (
                     <div key={t.id} className="table-row">
@@ -230,7 +232,7 @@ export default function AIInsights({
         </div>
       ) : (
         <div className="section-card">
-          <h3>No insights yet</h3>
+          <h3>{t("ai.noInsights", "No insights yet")}</h3>
           <p>Run the analyzer to generate spending insights, anomaly detection, savings opportunities, and investment suggestions from your live data.</p>
         </div>
       )}

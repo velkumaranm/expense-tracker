@@ -2,8 +2,10 @@ import { useRef, useState } from "react";
 import { ALL_CATS, EXPENSE_CATEGORIES, VALID_TYPES } from "../lib/constants";
 import { autoMapColumns, normalizeDate, parseCSV, toLocalDateStr, fmtINR } from "../lib/utils";
 import { TYPE_META } from "../lib/constants";
+import { useI18n } from "../lib/i18n";
 
 export default function ImportPage({ onImport, showToast }) {
+  const { t } = useI18n();
   const [step, setStep] = useState("upload");
   const [csvData, setCsvData] = useState(null);
   const [colMap, setColMap] = useState({ date: -1, type: -1, category: -1, amount: -1, note: -1 });
@@ -91,10 +93,10 @@ export default function ImportPage({ onImport, showToast }) {
     <>
       <div className="page-header">
         <div>
-          <h1>Import Transactions</h1>
-          <p>Bulk upload your historic data from CSV.</p>
+          <h1>{t("import.title", "Import Transactions")}</h1>
+          <p>{t("import.subtitle", "Bulk upload your historic data from CSV.")}</p>
         </div>
-        {step !== "upload" && <button className="icon-btn" onClick={reset}>Start Over</button>}
+        {step !== "upload" && <button className="icon-btn" onClick={reset}>{t("import.startOver", "Start Over")}</button>}
       </div>
 
       {step === "upload" && (
@@ -115,11 +117,11 @@ export default function ImportPage({ onImport, showToast }) {
           >
             <input ref={fileRef} type="file" accept=".csv,.txt" style={{ display: "none" }} onChange={(e) => handleFile(e.target.files[0])} />
             <div style={{ fontSize: 34, marginBottom: 10 }}>📂</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Drop a CSV here</div>
-            <div className="muted">or click to browse</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>{t("import.dropCsv", "Drop a CSV here")}</div>
+            <div className="muted">{t("import.browse", "or click to browse")}</div>
           </div>
           <div className="section-card">
-            <h3>Expected Format</h3>
+            <h3>{t("import.expectedFormat", "Expected Format")}</h3>
             <p>Date, Type, Category, Amount, Note</p>
             <div style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text2)", background: "var(--surface)", padding: "12px 13px", borderRadius: 12, lineHeight: 1.8 }}>
               Date,Type,Category,Amount,Note<br />
@@ -134,32 +136,32 @@ export default function ImportPage({ onImport, showToast }) {
 
       {step === "map" && csvData && (
         <div className="section-card">
-          <h3>Map Columns</h3>
+          <h3>{t("import.mapColumns", "Map Columns")}</h3>
           <p>{csvData.rows.length} rows found. Match each CSV column to the right field.</p>
           <div className="form-grid">
             {Object.keys(colMap).map((field) => (
               <div key={field} className="fg">
                 <label className="fl">{field}</label>
                 <select className="fs" value={colMap[field]} onChange={(e) => setColMap((prev) => ({ ...prev, [field]: parseInt(e.target.value, 10) }))}>
-                  <option value={-1}>Skip</option>
+                  <option value={-1}>{t("common.skip", "Skip")}</option>
                   {csvData.headers.map((h, i) => <option key={i} value={i}>{h} (col {i + 1})</option>)}
                 </select>
               </div>
             ))}
           </div>
-          <button className="btn-primary" style={{ marginTop: 14 }} onClick={buildPreview}>Preview Import</button>
+          <button className="btn-primary" style={{ marginTop: 14 }} onClick={buildPreview}>{t("import.preview", "Preview Import")}</button>
         </div>
       )}
 
       {step === "preview" && (
         <>
           <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-            <span className="pill active">Valid: {validCount}</span>
-            {errors.length > 0 && <span className="pill" style={{ color: "var(--expense)", borderColor: "rgba(248,113,113,.3)" }}>Skipped: {errors.length}</span>}
+            <span className="pill active">{t("common.valid", "Valid")}: {validCount}</span>
+            {errors.length > 0 && <span className="pill" style={{ color: "var(--expense)", borderColor: "rgba(248,113,113,.3)" }}>{t("common.skip", "Skip")}: {errors.length}</span>}
           </div>
           {errors.length > 0 && (
             <div className="section-card">
-              <h3>Import Warnings</h3>
+              <h3>{t("import.warnings", "Import Warnings")}</h3>
               <p>{errors.slice(0, 5).join(" | ")}{errors.length > 5 ? ` and ${errors.length - 5} more.` : ""}</p>
             </div>
           )}
@@ -167,20 +169,20 @@ export default function ImportPage({ onImport, showToast }) {
             {parsed.slice(0, 15).map((r, i) => (
               <div key={i} className="table-row" style={{ opacity: r.valid ? 1 : 0.45 }}>
                 <div className="split-row">
-                  <strong>{r.valid ? "Valid" : "Skip"}</strong>
+                  <strong>{r.valid ? t("common.valid", "Valid") : t("common.skip", "Skip")}</strong>
                   <span style={{ color: TYPE_META[r.type]?.color }}>{TYPE_META[r.type]?.label}</span>
                 </div>
                 <p>{r.date} • {r.category} • {fmtINR(r.amount)} • {r.note || "No note"}</p>
               </div>
             ))}
           </div>
-          {validCount > 0 && <button className="btn-primary" style={{ marginTop: 14 }} onClick={runImport}>Import {validCount} Transactions</button>}
+          {validCount > 0 && <button className="btn-primary" style={{ marginTop: 14 }} onClick={runImport}>{t("import.title", "Import Transactions")} ({validCount})</button>}
         </>
       )}
 
       {step === "importing" && (
         <div className="section-card" style={{ textAlign: "center" }}>
-          <h3>Importing</h3>
+          <h3>{t("import.importing", "Importing")}</h3>
           <p>{imported} / {validCount} completed</p>
           <div className="progress-track" style={{ marginTop: 12 }}>
             <div className="progress-fill" style={{ width: `${progress}%`, background: "var(--accent)" }} />
@@ -190,9 +192,9 @@ export default function ImportPage({ onImport, showToast }) {
 
       {step === "done" && (
         <div className="section-card" style={{ textAlign: "center" }}>
-          <h3>Import Complete</h3>
+          <h3>{t("import.complete", "Import Complete")}</h3>
           <p>{imported} transactions imported successfully.</p>
-          <button className="btn-primary" style={{ marginTop: 14 }} onClick={reset}>Import More</button>
+          <button className="btn-primary" style={{ marginTop: 14 }} onClick={reset}>{t("import.more", "Import More")}</button>
         </div>
       )}
     </>

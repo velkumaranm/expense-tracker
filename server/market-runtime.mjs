@@ -2,13 +2,21 @@ const MFAPI_BASE = "https://api.mfapi.in";
 const ALPHA_BASE = "https://www.alphavantage.co/query";
 const TWELVE_BASE = "https://api.twelvedata.com";
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
+const NSE_ARCHIVE_BASE = "https://nsearchives.nseindia.com/products/content";
+const YAHOO_ENDPOINTS = [
+  "https://query1.finance.yahoo.com/v7/finance/quote",
+  "https://query2.finance.yahoo.com/v8/finance/quote",
+];
 const ALPHA_MIN_INTERVAL_MS = 1200;
 const TWELVE_MIN_INTERVAL_MS = 150;
 const FINNHUB_MIN_INTERVAL_MS = 1100;
+const STOCK_QUOTE_MAX_AGE_DAYS = 10;
+const CRYPTO_QUOTE_MAX_AGE_DAYS = 5;
 
 let lastAlphaRequestAt = 0;
 let lastTwelveRequestAt = 0;
 let lastFinnhubRequestAt = 0;
+const nseEodCache = new Map();
 
 const COMMODITY_LIBRARY = [
   { id: "xauusd", kind: "commodity", symbol: "XAU/USD", name: "Gold", exchange: "Global", currency: "USD", source: "alpha-vantage", refreshMode: "fx" },
@@ -17,6 +25,26 @@ const COMMODITY_LIBRARY = [
   { id: "brent", kind: "commodity", symbol: "BRENT", name: "Crude Oil (Brent)", exchange: "Global", currency: "USD", source: "alpha-vantage", refreshMode: "alpha-commodity" },
   { id: "naturalgas", kind: "commodity", symbol: "NATURAL_GAS", name: "Natural Gas", exchange: "Global", currency: "USD", source: "alpha-vantage", refreshMode: "alpha-commodity" },
   { id: "copper", kind: "commodity", symbol: "COPPER", name: "Copper", exchange: "Global", currency: "USD", source: "alpha-vantage", refreshMode: "alpha-commodity" },
+];
+
+const INDIAN_SYMBOL_ALIASES = {
+  INFY: "INFY.NS",
+  TCS: "TCS.NS",
+  BSE: "BSE.NS",
+  NSLNISP: "NSLNISP.NS",
+  GOLDCASE: "GOLDCASE.NS",
+  SILVERCASE: "SILVERCASE.NS",
+  TTML: "TTML.NS",
+};
+
+const INDIAN_NAME_ALIASES = [
+  [/infosys/i, "INFY.NS"],
+  [/tata consultancy/i, "TCS.NS"],
+  [/bse limited/i, "BSE.NS"],
+  [/nmdc steel/i, "NSLNISP.NS"],
+  [/gold etf/i, "GOLDCASE.NS"],
+  [/silver etf/i, "SILVERCASE.NS"],
+  [/tata teleservices/i, "TTML.NS"],
 ];
 
 function toUrl(path, params = {}) {
@@ -35,6 +63,9 @@ function normalizeNumber(value) {
 function normalizeMarketError(message) {
   const text = String(message || "").trim();
   const lower = text.toLowerCase();
+  if (lower.includes("twelve data and finnhub did not return")) {
+    return text;
+  }
   if (
     lower.includes("alphavantage") ||
     lower.includes("alpha vantage") ||
@@ -62,6 +93,35 @@ function normalizeMarketError(message) {
   return text || "Refresh failed";
 }
 
+function normalizeFallbackFailure(failures = []) {
+  const joined = failures.map((item) => String(item || "")).join(" | ").toLowerCase();
+  if (joined.includes("alpha vantage free-tier limit")) {
+    return "Twelve Data and Finnhub did not return a usable fresh quote, and the Alpha Vantage fallback hit its free-tier limit.";
+  }
+  if (joined.includes("stale quote")) {
+    return "No provider returned a fresh market quote for this symbol right now.";
+  }
+  return "No provider returned a usable market quote for this symbol.";
+}
+
+function parseMarketDate(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isFreshEnough(value, maxAgeDays) {
+  const parsed = parseMarketDate(value);
+  if (!parsed) return false;
+  return Date.now() - parsed.getTime() <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
+function ensureFreshQuote(date, source, maxAgeDays) {
+  if (!isFreshEnough(date, maxAgeDays)) {
+    throw new Error(`${source} returned a stale quote.`);
+  }
+}
+
 function readAlphaDailyPoint(payload) {
   const series = payload?.["Time Series (Daily)"];
   if (!series || typeof series !== "object") {
@@ -84,6 +144,19 @@ async function fetchJson(url) {
     throw new Error(message);
   }
   return data;
+}
+
+async function fetchText(url) {
+  const res = await fetch(url, {
+    headers: {
+      "user-agent": "Finwise/1.0",
+      "accept": "text/csv,text/plain,*/*",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Request failed with ${res.status}`);
+  }
+  return res.text();
 }
 
 async function wait(ms) {
@@ -131,6 +204,18 @@ async function fetchFinnhubJson(path, params) {
   return data;
 }
 
+async function fetchYahooQuotes(symbols) {
+  const joined = Array.isArray(symbols) ? symbols.join(",") : String(symbols || "");
+  for (const endpoint of YAHOO_ENDPOINTS) {
+    try {
+      const data = await fetchJson(toUrl(endpoint, { symbols: joined }));
+      const results = data?.quoteResponse?.result;
+      if (Array.isArray(results) && results.length) return results;
+    } catch {}
+  }
+  return [];
+}
+
 function providerAvailability() {
   return {
     alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
@@ -143,18 +228,152 @@ function unique(values = []) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function parseCsvRow(line) {
+  const out = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      out.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  out.push(current.trim());
+  return out.map((value) => value.replace(/^"(.*)"$/, "$1").trim());
+}
+
+function formatArchiveDate(date) {
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${day}${month}${year}`;
+}
+
+function recentBusinessDates(limit = 7) {
+  const dates = [];
+  const cursor = new Date();
+  for (let i = 0; dates.length < limit && i < 12; i += 1) {
+    const next = new Date(cursor);
+    next.setDate(cursor.getDate() - i);
+    const day = next.getDay();
+    if (day !== 0 && day !== 6) dates.push(next);
+  }
+  return dates;
+}
+
+async function loadNseEodForDate(date) {
+  const stamp = formatArchiveDate(date);
+  if (nseEodCache.has(stamp)) return nseEodCache.get(stamp);
+  const fileUrl = `${NSE_ARCHIVE_BASE}/sec_bhavdata_full_${stamp}.csv`;
+  const csv = await fetchText(fileUrl);
+  const lines = csv.split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) throw new Error("Official NSE EOD file was empty.");
+  const header = parseCsvRow(lines[0]);
+  const symbolIdx = header.findIndex((item) => item.toUpperCase() === "SYMBOL");
+  const closeIdx = header.findIndex((item) => item.toUpperCase() === "CLOSE_PRICE");
+  const dateIdx = header.findIndex((item) => item.toUpperCase() === "DATE1");
+  if (symbolIdx < 0 || closeIdx < 0) throw new Error("Official NSE EOD file format changed.");
+  const rows = new Map();
+  for (const line of lines.slice(1)) {
+    const cells = parseCsvRow(line);
+    const symbol = String(cells[symbolIdx] || "").trim().toUpperCase();
+    const closePrice = normalizeNumber(cells[closeIdx]);
+    const priceDate = String(cells[dateIdx] || "").trim();
+    if (!symbol || !closePrice) continue;
+    rows.set(symbol, { price: closePrice, date: priceDate });
+  }
+  nseEodCache.set(stamp, rows);
+  return rows;
+}
+
+async function fetchOfficialNseClose(symbol) {
+  const baseSymbol = String(symbol || "").trim().toUpperCase().replace(/(\.NS|:NSE|\.NSE)$/i, "");
+  if (!baseSymbol) throw new Error("Missing NSE symbol.");
+  const failures = [];
+  for (const date of recentBusinessDates(7)) {
+    try {
+      const rows = await loadNseEodForDate(date);
+      const hit = rows.get(baseSymbol);
+      if (hit?.price) {
+        return {
+          date: hit.date || date.toISOString().slice(0, 10),
+          price: hit.price,
+        };
+      }
+    } catch (error) {
+      failures.push(error.message || "Official NSE EOD fetch failed");
+    }
+  }
+  throw new Error(failures.length ? "Official NSE daily close was not available for this symbol." : "Official NSE daily close was not available for this symbol.");
+}
+
 function stockSymbolCandidates(symbol) {
   const raw = String(symbol || "").trim().toUpperCase();
   if (!raw) return [];
+  if (raw.includes(":NSE")) {
+    const base = raw.replace(":NSE", "");
+    return unique([`${base}.NS`, `${base}:NSE`, `${base}.NSE`, base]);
+  }
+  if (raw.includes(":BSE")) {
+    const base = raw.replace(":BSE", "");
+    return unique([`${base}.BO`, `${base}:BSE`, `${base}.BSE`, base]);
+  }
   if (raw.endsWith(".BSE")) {
     const base = raw.slice(0, -4);
-    return unique([`${base}:BSE`, `${base}.BSE`, base]);
+    return unique([`${base}.BO`, `${base}:BSE`, `${base}.BSE`, base]);
   }
   if (raw.endsWith(".NSE")) {
     const base = raw.slice(0, -4);
-    return unique([`${base}:NSE`, `${base}.NSE`, base]);
+    return unique([`${base}.NS`, `${base}:NSE`, `${base}.NSE`, base]);
+  }
+  if (raw.endsWith(".NS") || raw.endsWith(".BO")) {
+    const base = raw.slice(0, -3);
+    return raw.endsWith(".NS")
+      ? unique([raw, `${base}:NSE`, `${base}.NSE`, base])
+      : unique([raw, `${base}:BSE`, `${base}.BSE`, base]);
+  }
+  if (!raw.includes(":") && !raw.includes(".") && /^[A-Z0-9-]+$/.test(raw)) {
+    return unique([`${raw}.NS`, `${raw}:NSE`, `${raw}.NSE`, `${raw}.BO`, `${raw}:BSE`, `${raw}.BSE`, raw]);
   }
   return [raw];
+}
+
+function canonicalIndianSymbol(holding) {
+  const raw = String(holding?.quoteSymbol || holding?.symbol || "").trim().toUpperCase();
+  if (INDIAN_SYMBOL_ALIASES[raw]) return INDIAN_SYMBOL_ALIASES[raw];
+  const name = String(holding?.name || "");
+  for (const [pattern, symbol] of INDIAN_NAME_ALIASES) {
+    if (pattern.test(name)) return symbol;
+  }
+  return "";
+}
+
+function isLikelyIndianHolding(holding) {
+  const symbol = String(holding?.quoteSymbol || holding?.symbol || "").toUpperCase();
+  const account = String(holding?.account || "").toLowerCase();
+  return (
+    symbol.includes(".NS") ||
+    symbol.includes(".BO") ||
+    symbol.includes(".NSE") ||
+    symbol.includes(".BSE") ||
+    symbol.includes(":NSE") ||
+    symbol.includes(":BSE") ||
+    account.includes("zerodha") ||
+    account.includes("groww") ||
+    account.includes("upstox") ||
+    account.includes("angel") ||
+    account.includes("indmoney")
+  );
 }
 
 function buildStockSearchError() {
@@ -341,6 +560,7 @@ async function refreshMutualFundHolding(holding) {
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
+    currency: "INR",
     source: "mfapi",
     priceLabel: "Latest NAV",
     refreshedAt: new Date().toISOString(),
@@ -349,14 +569,35 @@ async function refreshMutualFundHolding(holding) {
 }
 
 async function refreshStockHolding(holding) {
-  const symbol = String(holding.symbol || "").trim().toUpperCase();
+  const symbol = String(holding.quoteSymbol || holding.symbol || "").trim().toUpperCase();
   if (!symbol) throw new Error(`Missing symbol for ${holding.name || "stock holding"}`);
   let latest;
   let source = "";
-  let resolvedSymbol = symbol;
-  const candidates = stockSymbolCandidates(symbol);
-  if (process.env.TWELVE_DATA_API_KEY) {
-    for (const candidate of candidates) {
+  let resolvedSymbol = canonicalIndianSymbol(holding) || symbol;
+  const candidates = unique([
+    ...stockSymbolCandidates(resolvedSymbol),
+    ...stockSymbolCandidates(symbol),
+  ]);
+  const likelyIndian = isLikelyIndianHolding(holding);
+  const nonRawCandidates = candidates.filter((candidate) => candidate !== symbol || candidate.includes(".") || candidate.includes(":"));
+  const failures = [];
+  if (likelyIndian && candidates.some((candidate) => candidate.endsWith(".NS") || candidate.includes(":NSE") || candidate.endsWith(".NSE"))) {
+    try {
+      const officialSymbol =
+        candidates.find((candidate) => candidate.endsWith(".NS")) ||
+        candidates.find((candidate) => candidate.includes(":NSE")) ||
+        candidates.find((candidate) => candidate.endsWith(".NSE")) ||
+        resolvedSymbol;
+      latest = await fetchOfficialNseClose(officialSymbol);
+      source = "nse-official-eod";
+      resolvedSymbol = officialSymbol;
+    } catch (error) {
+      failures.push(error.message || "Official NSE EOD failed");
+    }
+  }
+  if (!latest && process.env.TWELVE_DATA_API_KEY) {
+    let twelveResolved = false;
+    for (const candidate of likelyIndian ? nonRawCandidates : candidates) {
       try {
         const data = await fetchTwelveJson("/time_series", {
           symbol: candidate,
@@ -367,15 +608,41 @@ async function refreshStockHolding(holding) {
         const point = Array.isArray(data?.values) ? data.values[0] : null;
         const price = normalizeNumber(point?.close);
         if (price) {
+          ensureFreshQuote(point?.datetime, "Twelve Data", STOCK_QUOTE_MAX_AGE_DAYS);
           latest = { date: point?.datetime || "", price };
           source = "twelve-data";
           resolvedSymbol = candidate;
+          twelveResolved = true;
           break;
         }
-      } catch {}
+      } catch (error) {
+        failures.push(error.message || "Twelve Data failed");
+      }
+    }
+    if (!twelveResolved && !latest) failures.push("Twelve Data did not return a usable quote.");
+  }
+  if (!latest && likelyIndian) {
+    const yahooSymbols = unique(candidates.flatMap((candidate) => stockSymbolCandidates(candidate)).filter((candidate) => candidate.endsWith(".NS") || candidate.endsWith(".BO")));
+    try {
+      const quotes = await fetchYahooQuotes(yahooSymbols);
+      const usable = Array.isArray(quotes)
+        ? quotes.find((quote) => Number.isFinite(Number(quote?.regularMarketPrice)) && Number(quote?.regularMarketPrice) > 0)
+        : null;
+      if (usable) {
+        const quoteDate = usable?.regularMarketTime ? new Date(Number(usable.regularMarketTime) * 1000).toISOString() : new Date().toISOString();
+        ensureFreshQuote(quoteDate, "Yahoo Finance", STOCK_QUOTE_MAX_AGE_DAYS);
+        latest = { date: quoteDate.slice(0, 10), price: Number(usable.regularMarketPrice) };
+        source = "yahoo-finance";
+        resolvedSymbol = usable.symbol || resolvedSymbol;
+      } else {
+        failures.push("Yahoo Finance did not return a usable quote.");
+      }
+    } catch (error) {
+      failures.push(error.message || "Yahoo Finance failed");
     }
   }
-  if (!latest && process.env.FINNHUB_API_KEY) {
+  if (!latest && process.env.FINNHUB_API_KEY && !likelyIndian) {
+    let finnhubResolved = false;
     for (const candidate of candidates) {
       try {
         const data = await fetchFinnhubJson("/quote", {
@@ -387,36 +654,69 @@ async function refreshStockHolding(holding) {
           latest = { date: new Date().toISOString().slice(0, 10), price };
           source = "finnhub";
           resolvedSymbol = candidate;
+          finnhubResolved = true;
           break;
         }
-      } catch {}
+      } catch (error) {
+        failures.push(error.message || "Finnhub failed");
+      }
+    }
+    if (!finnhubResolved && !latest) failures.push("Finnhub did not return a usable quote.");
+  }
+  if (!latest && !likelyIndian) {
+    const yahooSymbols = unique(candidates.flatMap((candidate) => stockSymbolCandidates(candidate)).filter((candidate) => candidate.endsWith(".NS") || candidate.endsWith(".BO")));
+    try {
+      const quotes = await fetchYahooQuotes(yahooSymbols);
+      const usable = Array.isArray(quotes)
+        ? quotes.find((quote) => Number.isFinite(Number(quote?.regularMarketPrice)) && Number(quote?.regularMarketPrice) > 0)
+        : null;
+      if (usable) {
+        const quoteDate = usable?.regularMarketTime ? new Date(Number(usable.regularMarketTime) * 1000).toISOString() : new Date().toISOString();
+        ensureFreshQuote(quoteDate, "Yahoo Finance", STOCK_QUOTE_MAX_AGE_DAYS);
+        latest = { date: quoteDate.slice(0, 10), price: Number(usable.regularMarketPrice) };
+        source = "yahoo-finance";
+        resolvedSymbol = usable.symbol || resolvedSymbol;
+      } else {
+        failures.push("Yahoo Finance did not return a usable quote.");
+      }
+    } catch (error) {
+      failures.push(error.message || "Yahoo Finance failed");
     }
   }
   if (!latest) {
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
     if (!apiKey) throw new Error("Configure TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY to refresh stock holdings.");
-    const data = await fetchAlphaJson({
-      function: "TIME_SERIES_DAILY",
-      symbol,
-      outputsize: "compact",
-      apikey: apiKey,
-    });
-    latest = readAlphaDailyPoint(data);
-    source = "alpha-vantage";
+    try {
+      const data = await fetchAlphaJson({
+        function: "TIME_SERIES_DAILY",
+        symbol,
+        outputsize: "compact",
+        apikey: apiKey,
+      });
+      latest = readAlphaDailyPoint(data);
+      ensureFreshQuote(latest.date, "Alpha Vantage", STOCK_QUOTE_MAX_AGE_DAYS);
+      source = "alpha-vantage";
+    } catch (error) {
+      failures.push(error.message || "Alpha Vantage failed");
+    }
+  }
+  if (!latest) {
+    throw new Error(normalizeFallbackFailure(failures));
   }
   const units = normalizeNumber(holding.units);
   const investedValue = units * normalizeNumber(holding.costPerUnit);
   const currentValue = units * latest.price;
   return {
     ...holding,
-    symbol: resolvedSymbol,
+    quoteSymbol: resolvedSymbol,
     currentPrice: latest.price,
     priceDate: latest.date,
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
+    currency: likelyIndian ? "INR" : (holding.currency || "USD"),
     source,
-    priceLabel: source === "finnhub" ? "Latest quote" : "Latest close",
+    priceLabel: source === "finnhub" ? "Latest quote" : source === "nse-official-eod" ? "Official NSE close" : "Latest close",
     refreshedAt: new Date().toISOString(),
     refreshError: "",
   };
@@ -427,6 +727,7 @@ async function refreshCryptoHolding(holding) {
   if (!symbol) throw new Error(`Missing symbol for ${holding.name || "crypto holding"}`);
   let latest;
   let source = "";
+  const failures = [];
   if (process.env.TWELVE_DATA_API_KEY) {
     try {
       const data = await fetchTwelveJson("/time_series", {
@@ -438,10 +739,13 @@ async function refreshCryptoHolding(holding) {
       const point = Array.isArray(data?.values) ? data.values[0] : null;
       const price = normalizeNumber(point?.close);
       if (price) {
+        ensureFreshQuote(point?.datetime, "Twelve Data", CRYPTO_QUOTE_MAX_AGE_DAYS);
         latest = { date: point?.datetime || "", price };
         source = "twelve-data";
       }
-    } catch {}
+    } catch (error) {
+      failures.push(error.message || "Twelve Data failed");
+    }
   }
   if (!latest && process.env.FINNHUB_API_KEY) {
     try {
@@ -454,29 +758,36 @@ async function refreshCryptoHolding(holding) {
         latest = { date: new Date().toISOString().slice(0, 10), price };
         source = "finnhub";
       }
-    } catch {}
+    } catch (error) {
+      failures.push(error.message || "Finnhub failed");
+    }
   }
   if (!latest && process.env.ALPHA_VANTAGE_API_KEY) {
-    const data = await fetchAlphaJson({
-      function: "DIGITAL_CURRENCY_DAILY",
-      symbol: symbol.split("/")[0],
-      market: symbol.split("/")[1] || "USD",
-      apikey: process.env.ALPHA_VANTAGE_API_KEY,
-    });
-    const series = data?.["Time Series (Digital Currency Daily)"];
-    if (series && typeof series === "object") {
-      const [date] = Object.keys(series).sort((a, b) => new Date(b) - new Date(a));
-      const point = series?.[date];
-      const market = symbol.split("/")[1] || "USD";
-      const price = normalizeNumber(point?.[`4b. close (${market})`] || point?.["4a. close (USD)"]);
-      if (date && price) {
-        latest = { date, price };
-        source = "alpha-vantage";
+    try {
+      const data = await fetchAlphaJson({
+        function: "DIGITAL_CURRENCY_DAILY",
+        symbol: symbol.split("/")[0],
+        market: symbol.split("/")[1] || "USD",
+        apikey: process.env.ALPHA_VANTAGE_API_KEY,
+      });
+      const series = data?.["Time Series (Digital Currency Daily)"];
+      if (series && typeof series === "object") {
+        const [date] = Object.keys(series).sort((a, b) => new Date(b) - new Date(a));
+        const point = series?.[date];
+        const market = symbol.split("/")[1] || "USD";
+        const price = normalizeNumber(point?.[`4b. close (${market})`] || point?.["4a. close (USD)"]);
+        if (date && price) {
+          ensureFreshQuote(date, "Alpha Vantage", CRYPTO_QUOTE_MAX_AGE_DAYS);
+          latest = { date, price };
+          source = "alpha-vantage";
+        }
       }
+    } catch (error) {
+      failures.push(error.message || "Alpha Vantage failed");
     }
   }
   if (!latest) {
-    throw new Error("Configure TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY to refresh crypto holdings.");
+    throw new Error(process.env.TWELVE_DATA_API_KEY || process.env.FINNHUB_API_KEY || process.env.ALPHA_VANTAGE_API_KEY ? normalizeFallbackFailure(failures) : "Configure TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY to refresh crypto holdings.");
   }
   const units = normalizeNumber(holding.units);
   const investedValue = units * normalizeNumber(holding.costPerUnit);
@@ -489,6 +800,7 @@ async function refreshCryptoHolding(holding) {
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
+    currency: holding.currency || "USD",
     source,
     priceLabel: source === "finnhub" ? "Latest quote" : "Latest close",
     refreshedAt: new Date().toISOString(),
@@ -542,6 +854,7 @@ async function refreshCommodityHolding(holding) {
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
+    currency: symbol === "XAU/USD" || symbol === "XAG/USD" ? "USD" : (holding.currency || "USD"),
     source: "alpha-vantage",
     priceLabel,
     refreshedAt: new Date().toISOString(),
@@ -584,8 +897,22 @@ export async function refreshMarketHoldings(holdings = []) {
       refreshed.push(next);
       results.push({ id: holding.id, ok: true, name: next.name || next.symbol, priceDate: next.priceDate });
     } catch (error) {
+      const units = normalizeNumber(holding.units);
+      const investedValue = normalizeNumber(holding.investedValue || units * normalizeNumber(holding.costPerUnit));
+      const preservedCurrentValue = normalizeNumber(holding.currentValue);
+      const preservedCurrentPrice = normalizeNumber(holding.currentPrice);
+      const nextCurrentValue = preservedCurrentValue || 0;
       refreshed.push({
         ...holding,
+        quoteSymbol: canonicalIndianSymbol(holding) || holding.quoteSymbol || holding.symbol || "",
+        currency: holding.currency || (isLikelyIndianHolding(holding) ? "INR" : "USD"),
+        currentPrice: preservedCurrentPrice,
+        currentValue: nextCurrentValue,
+        investedValue,
+        gainLoss: nextCurrentValue - investedValue,
+        priceDate: holding.priceDate || "",
+        priceLabel: holding.priceLabel || (preservedCurrentPrice > 0 ? "Last known close" : ""),
+        source: holding.source || "",
         refreshError: normalizeMarketError(error.message),
         refreshedAt: new Date().toISOString(),
       });
@@ -606,5 +933,54 @@ export async function refreshMarketHoldings(holdings = []) {
       failed: results.filter((item) => !item.ok).length,
     },
     results,
+  };
+}
+
+export async function fetchUsdInrFx() {
+  if (process.env.ALPHA_VANTAGE_API_KEY) {
+    try {
+      const data = await fetchAlphaJson({
+        function: "CURRENCY_EXCHANGE_RATE",
+        from_currency: "USD",
+        to_currency: "INR",
+        apikey: process.env.ALPHA_VANTAGE_API_KEY,
+      });
+      const quote = data?.["Realtime Currency Exchange Rate"];
+      const rate = normalizeNumber(quote?.["5. Exchange Rate"]);
+      if (rate) {
+        return {
+          base: "USD",
+          quote: "INR",
+          rate,
+          asOf: quote?.["6. Last Refreshed"] || new Date().toISOString(),
+          source: "alpha-vantage",
+        };
+      }
+    } catch {}
+  }
+  if (process.env.TWELVE_DATA_API_KEY) {
+    try {
+      const data = await fetchTwelveJson("/exchange_rate", {
+        symbol: "USD/INR",
+        apikey: process.env.TWELVE_DATA_API_KEY,
+      });
+      const rate = normalizeNumber(data?.rate);
+      if (rate) {
+        return {
+          base: "USD",
+          quote: "INR",
+          rate,
+          asOf: data?.timestamp ? new Date(Number(data.timestamp) * 1000).toISOString() : new Date().toISOString(),
+          source: "twelve-data",
+        };
+      }
+    } catch {}
+  }
+  return {
+    base: "USD",
+    quote: "INR",
+    rate: 83,
+    asOf: "",
+    source: "fallback",
   };
 }

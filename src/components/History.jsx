@@ -9,6 +9,7 @@ import {
   VALID_TYPES,
 } from "../lib/constants";
 import { fmtINR } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 export default function History({
   filtered,
@@ -27,16 +28,17 @@ export default function History({
   selectedMonth,
   setSelectedMonth,
 }) {
+  const { t } = useI18n();
   const allCats = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...INVESTMENT_CATEGORIES, ...INSURANCE_CATEGORIES];
 
   return (
     <>
       <div className="page-header">
         <div>
-          <h1>Transactions</h1>
-          <p>{filtered.length} record{filtered.length !== 1 ? "s" : ""} in the current view</p>
+          <h1>{t("history.title", "History")}</h1>
+          <p>{filtered.length} {t("history.records", "records in the current view")}</p>
         </div>
-        <button className="icon-btn" onClick={onExport}>Export CSV</button>
+        <button className="icon-btn" onClick={onExport}>{t("analytics.exportCsv", "Export CSV")}</button>
       </div>
 
       <MonthStrip months={months} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
@@ -45,21 +47,21 @@ export default function History({
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {["all", ...VALID_TYPES].map((item) => (
             <button key={item} className={`filter-chip ${filterType === item ? "active" : ""}`} onClick={() => setFilterType(item)}>
-              {item === "all" ? "All" : `${TYPE_META[item].icon} ${TYPE_META[item].label}`}
+              {item === "all" ? t("common.all", "All") : `${TYPE_META[item].icon} ${TYPE_META[item].label}`}
             </button>
           ))}
           <button className={`filter-chip ${recurringOnly ? "active" : ""}`} onClick={() => setRecurringOnly((v) => !v)}>
-            Recurring Only
+            {t("history.recurringOnly", "Recurring Only")}
           </button>
         </div>
         <div className="search-wrap">
           <span className="search-icon">⌕</span>
-          <input className="search-input" placeholder="Search note, category, amount…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="search-input" placeholder={t("history.searchPlaceholder", "Search note, category, amount…")} value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
       <div className="filter-strip" style={{ marginBottom: 12 }}>
-        <button className={`filter-chip ${!filterCategory ? "active" : ""}`} onClick={() => setFilterCategory("")}>All Categories</button>
+        <button className={`filter-chip ${!filterCategory ? "active" : ""}`} onClick={() => setFilterCategory("")}>{t("history.allCategories", "All Categories")}</button>
         {allCats.map((c) => (
           <button key={c} className={`filter-chip ${filterCategory === c ? "active" : ""}`} onClick={() => setFilterCategory(filterCategory === c ? "" : c)}>
             {CATEGORY_ICONS[c]} {c}
@@ -71,7 +73,7 @@ export default function History({
         {!filtered.length ? (
           <div className="empty-state">
             <div className="es-icon">📭</div>
-            <p>No transactions match these filters yet.</p>
+            <p>{t("history.noMatches", "No transactions match these filters yet.")}</p>
           </div>
         ) : filtered.map((item) => (
           <div key={item.id} className="tx-item">
@@ -82,11 +84,11 @@ export default function History({
                 <span className={`tx-badge ${item.type}`}>{TYPE_META[item.type]?.label || item.type}</span>
                 {item.recurring && <span className="tx-badge recurring">{item.recurringFrequency || "monthly"}</span>}
               </div>
-              <div className="tx-note">{item.note || "No note"}</div>
+              <div className="tx-note">{item.note || t("history.noNote", "No note")}</div>
             </div>
             <div className="tx-actions">
-              <button className="tx-btn" onClick={() => onEdit(item)}>Edit</button>
-              <button className="tx-btn del" onClick={() => onDelete(item.id)}>Delete</button>
+              <button className="tx-btn" onClick={() => onEdit(item)}>{t("common.edit", "Edit")}</button>
+              <button className="tx-btn del" onClick={() => onDelete(item.id)}>{t("common.delete", "Delete")}</button>
             </div>
             <div className="tx-meta">
               <div className="tx-amount" style={{ color: TYPE_META[item.type]?.color }}>{TYPE_META[item.type]?.sign || ""}{fmtINR(item.amount)}</div>

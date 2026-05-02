@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { fmtINR, goalId } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 import PortfolioHoldings from "./PortfolioHoldings";
 
 const WEALTH_COLORS = ["#34D399", "#818CF8", "#C8A96E", "#F87171"];
@@ -25,11 +26,15 @@ export default function NetWorthTracker({
   snapshots,
   setSnapshots,
   marketProviders,
+  marketDisplayCurrency,
+  setMarketDisplayCurrency,
+  marketFx,
   showToast,
   trackedCash,
   trackedInvestments,
   netWorth,
 }) {
+  const { t } = useI18n();
   const [assetForm, setAssetForm] = useState({ name: "", type: "Cash", value: "" });
   const [liabilityForm, setLiabilityForm] = useState({ name: "", type: "Loan", value: "" });
 
@@ -65,29 +70,29 @@ export default function NetWorthTracker({
     <>
       <div className="page-header">
         <div>
-          <h1>Net Worth</h1>
-          <p>Bring together tracked cash flow, investment buildup, manual assets, and liabilities.</p>
+          <h1>{t("wealth.title", "Net Worth")}</h1>
+          <p>{t("wealth.subtitle", "Bring together tracked cash flow, investment buildup, manual assets, and liabilities.")}</p>
         </div>
       </div>
 
       <div className="summary-grid">
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Tracked Cash Reserve</div>
+          <div className="sc-label">{t("wealth.cashReserve", "Tracked Cash Reserve")}</div>
           <div className="sc-value" style={{ color: "var(--income)" }}>{fmtINR(trackedCash)}</div>
           <div className="sc-sub">Income minus expenses, insurance, and investment outflow.</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Tracked Investments</div>
+          <div className="sc-label">{t("wealth.trackedInvestments", "Tracked Investments")}</div>
           <div className="sc-value" style={{ color: "var(--invest)" }}>{fmtINR(trackedInvestments)}</div>
           <div className="sc-sub">Non-market investments plus live-valued market holdings.</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Liquidity Buffer</div>
+          <div className="sc-label">{t("wealth.liquidityBuffer", "Liquidity Buffer")}</div>
           <div className="sc-value" style={{ color: "var(--accent)" }}>{fmtINR(liquidAssets)}</div>
           <div className="sc-sub">Cash-like assets available without liquidating long-term holdings.</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Net Worth</div>
+          <div className="sc-label">{t("wealth.netWorthLabel", "Net Worth")}</div>
           <div className="sc-value" style={{ color: netWorth >= 0 ? "var(--income)" : "var(--expense)" }}>{fmtINR(netWorth)}</div>
           <div className="sc-sub">All tracked assets minus liabilities.</div>
         </div>
@@ -95,7 +100,7 @@ export default function NetWorthTracker({
 
       <div className="charts-grid">
         <div className="chart-card chart-span-5">
-          <div className="chart-title">Wealth Mix</div>
+          <div className="chart-title">{t("wealth.wealthMix", "Wealth Mix")}</div>
           {wealthMix.length ? (
             <div className="pie-row">
               <div style={{ width: 180, height: 180 }}>
@@ -122,20 +127,20 @@ export default function NetWorthTracker({
         </div>
 
         <div className="chart-card chart-span-7">
-          <div className="chart-title">Risk & Balance Sheet Diagnostics</div>
+          <div className="chart-title">{t("wealth.riskDiagnostics", "Risk & Balance Sheet Diagnostics")}</div>
           <div className="mini-grid">
             <div className="mini-card">
-              <div className="k">Manual Assets</div>
+              <div className="k">{t("wealth.manualAssets", "Manual Assets")}</div>
               <div className="v">{fmtINR(assetTotal)}</div>
               <div className="muted">Property, gold, retirement, and other self-entered assets.</div>
             </div>
             <div className="mini-card">
-              <div className="k">Liabilities</div>
+              <div className="k">{t("wealth.liabilities", "Liabilities")}</div>
               <div className="v" style={{ color: "var(--expense)" }}>{fmtINR(liabilityTotal)}</div>
               <div className="muted">Loans, cards, tax dues, and other obligations.</div>
             </div>
             <div className="mini-card">
-              <div className="k">Debt Ratio</div>
+              <div className="k">{t("wealth.debtRatio", "Debt Ratio")}</div>
               <div className="v" style={{ color: debtRatio > 0.45 ? "var(--expense)" : "var(--accent)" }}>
                 {(debtRatio * 100).toFixed(0)}%
               </div>
@@ -169,6 +174,9 @@ export default function NetWorthTracker({
         snapshots={snapshots}
         setSnapshots={setSnapshots}
         marketProviders={marketProviders}
+        marketDisplayCurrency={marketDisplayCurrency}
+        setMarketDisplayCurrency={setMarketDisplayCurrency}
+        marketFx={marketFx}
         showToast={showToast}
       />
 
@@ -201,13 +209,13 @@ export default function NetWorthTracker({
                 <input className="fi" type="number" value={assetForm.value} onChange={(e) => setAssetForm((f) => ({ ...f, value: e.target.value }))} />
               </div>
               <div className="fg full">
-                <button className="btn-primary" onClick={addAsset}>Add Asset</button>
+                <button className="btn-primary" onClick={addAsset}>{t("wealth.addAsset", "Add Asset")}</button>
               </div>
             </div>
           </div>
 
           <div className="section-card">
-            <h3>Assets</h3>
+            <h3>{t("wealth.assetsTitle", "Assets")}</h3>
             <div className="stack">
               {assets.length ? assets.map((item) => (
                 <div key={item.id} className="net-item">
@@ -217,10 +225,10 @@ export default function NetWorthTracker({
                   </div>
                   <div className="split-row">
                     <p>{item.type}</p>
-                    <button className="tx-btn del" onClick={() => removeAsset(item.id)}>Delete</button>
+                    <button className="tx-btn del" onClick={() => removeAsset(item.id)}>{t("common.delete", "Delete")}</button>
                   </div>
                 </div>
-              )) : <p>No manual assets added yet.</p>}
+              )) : <p>{t("wealth.noAssets", "No manual assets added yet.")}</p>}
             </div>
           </div>
         </div>
@@ -239,7 +247,7 @@ export default function NetWorthTracker({
             </div>
             <div className="form-grid">
               <div className="fg full">
-                <label className="fl">Add Liability</label>
+                <label className="fl">{t("wealth.addLiability", "Add Liability")}</label>
                 <input className="fi" placeholder="Home loan, personal loan, credit card balance..." value={liabilityForm.name} onChange={(e) => setLiabilityForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
               <div className="fg">
@@ -253,13 +261,13 @@ export default function NetWorthTracker({
                 <input className="fi" type="number" value={liabilityForm.value} onChange={(e) => setLiabilityForm((f) => ({ ...f, value: e.target.value }))} />
               </div>
               <div className="fg full">
-                <button className="btn-primary" onClick={addLiability}>Add Liability</button>
+                <button className="btn-primary" onClick={addLiability}>{t("wealth.addLiability", "Add Liability")}</button>
               </div>
             </div>
           </div>
 
           <div className="section-card">
-            <h3>Liabilities</h3>
+            <h3>{t("wealth.liabilities", "Liabilities")}</h3>
             <div className="stack">
               {liabilities.length ? liabilities.map((item) => (
                 <div key={item.id} className="net-item">
@@ -269,10 +277,10 @@ export default function NetWorthTracker({
                   </div>
                   <div className="split-row">
                     <p>{item.type}</p>
-                    <button className="tx-btn del" onClick={() => removeLiability(item.id)}>Delete</button>
+                    <button className="tx-btn del" onClick={() => removeLiability(item.id)}>{t("common.delete", "Delete")}</button>
                   </div>
                 </div>
-              )) : <p>No liabilities added yet.</p>}
+              )) : <p>{t("wealth.noLiabilities", "No liabilities added yet.")}</p>}
             </div>
           </div>
         </div>

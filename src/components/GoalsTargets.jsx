@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { fmtINR, goalId } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 const GOAL_TYPES = ["Emergency Fund", "Vacation", "Retirement", "Education", "Home", "Vehicle", "Investment Target", "Insurance Cover"];
 const GOAL_TEMPLATES = [
@@ -19,6 +20,7 @@ const monthsUntil = (targetDate) => {
 };
 
 export default function GoalsTargets({ goals, setGoals }) {
+  const { t } = useI18n();
   const [form, setForm] = useState({
     name: "",
     category: "Emergency Fund",
@@ -75,29 +77,29 @@ export default function GoalsTargets({ goals, setGoals }) {
     <>
       <div className="page-header">
         <div>
-          <h1>Goals & Targets</h1>
-          <p>Track emergency fund, travel, big purchases, and long-term milestones.</p>
+          <h1>{t("goals.title", "Goals & Targets")}</h1>
+          <p>{t("goals.subtitle", "Track emergency fund, travel, big purchases, and long-term milestones.")}</p>
         </div>
       </div>
 
       <div className="summary-grid">
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Goal Corpus</div>
+          <div className="sc-label">{t("goals.corpus", "Goal Corpus")}</div>
           <div className="sc-value">{fmtINR(metrics.targetTotal)}</div>
           <div className="sc-sub">Total amount planned across all active goals.</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Already Funded</div>
+          <div className="sc-label">{t("goals.funded", "Already Funded")}</div>
           <div className="sc-value" style={{ color: "var(--income)" }}>{fmtINR(metrics.fundedTotal)}</div>
           <div className="sc-sub">{metrics.targetTotal ? `${metrics.fundedPct.toFixed(0)}% of target pool covered.` : "No active targets yet."}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Monthly Goal Pace</div>
+          <div className="sc-label">{t("goals.monthlyPace", "Monthly Goal Pace")}</div>
           <div className="sc-value" style={{ color: "var(--accent)" }}>{fmtINR(metrics.monthlyRequired)}</div>
           <div className="sc-sub">Estimated monthly contribution needed to hit dated goals.</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">On-Track Goals</div>
+          <div className="sc-label">{t("goals.onTrack", "On-Track Goals")}</div>
           <div className="sc-value" style={{ color: metrics.onTrack === goals.length && goals.length ? "var(--income)" : "var(--accent)" }}>
             {goals.length ? `${metrics.onTrack}/${goals.length}` : "—"}
           </div>
@@ -108,7 +110,7 @@ export default function GoalsTargets({ goals, setGoals }) {
       <div className="two-col">
         <div className="form-card">
           <div style={{ marginBottom: 14 }}>
-            <label className="fl" style={{ marginBottom: 8, display: "block" }}>Starter Templates</label>
+              <label className="fl" style={{ marginBottom: 8, display: "block" }}>Starter Templates</label>
             <div className="filter-strip" style={{ marginBottom: 0 }}>
               {GOAL_TEMPLATES.map((template) => (
                 <button key={template.name} className="filter-chip" onClick={() => setForm(template)}>
@@ -141,7 +143,7 @@ export default function GoalsTargets({ goals, setGoals }) {
               <input className="fi" type="number" value={form.currentAmount} onChange={(e) => setForm((f) => ({ ...f, currentAmount: e.target.value }))} />
             </div>
             <div className="fg full">
-              <button className="btn-primary" onClick={addGoal}>Add Goal</button>
+              <button className="btn-primary" onClick={addGoal}>{t("goals.add", "Add Goal")}</button>
             </div>
           </div>
         </div>
@@ -163,7 +165,7 @@ export default function GoalsTargets({ goals, setGoals }) {
                   </div>
                   <div className="goal-head-actions">
                     <span className={`status-pill ${status === "Completed" ? "verified" : status === "Needs pace" ? "pending" : "neutral"}`}>{status}</span>
-                    <button className="tx-btn del" onClick={() => removeGoal(goal.id)}>Delete</button>
+                    <button className="tx-btn del" onClick={() => removeGoal(goal.id)}>{t("common.delete", "Delete")}</button>
                   </div>
                 </div>
                 <div className="progress-track" style={{ marginBottom: 8 }}>
@@ -203,7 +205,7 @@ export default function GoalsTargets({ goals, setGoals }) {
                     }}
                     disabled={!contribution}
                   >
-                    Add
+                    {t("common.add", "Add")}
                   </button>
                   <button
                     className="btn-secondary"
@@ -213,14 +215,14 @@ export default function GoalsTargets({ goals, setGoals }) {
                     }}
                     disabled={!contribution}
                   >
-                    Set Exact
+                    {t("goals.setExact", "Set Exact")}
                   </button>
                 </div>
               </div>
             );
           }) : (
             <div className="section-card">
-              <h3>No goals yet</h3>
+              <h3>{t("goals.noGoals", "No goals yet")}</h3>
               <p>Add a financial target and start measuring progress instead of hoping it happens.</p>
             </div>
           )}

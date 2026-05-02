@@ -7,6 +7,7 @@ import {
 import {
   refreshMarketHoldings,
   searchMarketInstruments,
+  fetchUsdInrFx,
 } from "./market-runtime.mjs";
 
 loadLocalEnv();
@@ -69,6 +70,16 @@ const server = createServer(async (req, res) => {
       json(res, 200, { ok: true, ...payload });
     } catch (error) {
       json(res, 500, { ok: false, error: error.message || "Market refresh failed" });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/market/fx") {
+    try {
+      const fx = await fetchUsdInrFx();
+      json(res, 200, { ok: true, ...fx });
+    } catch (error) {
+      json(res, 500, { ok: false, error: error.message || "FX fetch failed" });
     }
     return;
   }

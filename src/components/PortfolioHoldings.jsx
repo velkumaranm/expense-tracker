@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
-import { refreshMarketHoldings, searchMarketInstruments } from "../lib/market";
-import { fmtINR, goalId } from "../lib/utils";
+import { refreshMarketHoldings, rescueIndianHoldingsQuotes, searchMarketInstruments } from "../lib/market";
+import { convertAmount, fmtINR, fmtMoney, goalId } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 const emptyForm = {
   kind: "stock",
   name: "",
   symbol: "",
+  quoteSymbol: "",
+  currency: "INR",
   schemeCode: "",
   units: "",
   costPerUnit: "",
@@ -62,6 +65,39 @@ function symbolPlaceholder(kind) {
   return "RELIANCE.BSE or AAPL";
 }
 
+function quoteSymbolPlaceholder(kind) {
+  if (kind === "crypto") return "BTCUSD, BINANCE:BTCUSDT";
+  if (kind === "commodity") return "XAU/USD or WTI";
+  return "INFY.NS, TCS.NS, BSE.NS";
+}
+
+const INDIAN_QUOTE_SYMBOL_ALIASES = {
+  INFY: "INFY.NS",
+  TCS: "TCS.NS",
+  BSE: "BSE.NS",
+  NSLNISP: "NSLNISP.NS",
+  GOLDCASE: "GOLDCASE.NS",
+  SILVERCASE: "SILVERCASE.NS",
+  TTML: "TTML.NS",
+};
+
+function suggestQuoteSymbol(kind, name, symbol) {
+  if (kind !== "stock") return String(symbol || "").trim().toUpperCase();
+  const raw = String(symbol || "").trim().toUpperCase();
+  if (!raw) return "";
+  if (raw.includes(".") || raw.includes(":")) return raw;
+  if (INDIAN_QUOTE_SYMBOL_ALIASES[raw]) return INDIAN_QUOTE_SYMBOL_ALIASES[raw];
+  const title = String(name || "");
+  if (/infosys/i.test(title)) return "INFY.NS";
+  if (/tata consultancy/i.test(title)) return "TCS.NS";
+  if (/bse limited/i.test(title)) return "BSE.NS";
+  if (/nmdc steel/i.test(title)) return "NSLNISP.NS";
+  if (/gold etf/i.test(title)) return "GOLDCASE.NS";
+  if (/silver etf/i.test(title)) return "SILVERCASE.NS";
+  if (/tata teleservices/i.test(title)) return "TTML.NS";
+  return raw;
+}
+
 function providerCopy(kind, marketProviders) {
   if (kind === "mutualFund") {
     return "Mutual fund values use the latest NAV from a free AMFI-backed fund feed.";
@@ -95,21 +131,91 @@ function toLocalStamp(iso) {
   }
 }
 
+function getDisplayPrice(item) {
+  const live = Number(item.currentPrice || 0);
+  if (live > 0) return fmtINR(live);
+  const cost = Number(item.costPerUnit || 0);
+  if (cost > 0) return `${fmtINR(cost)} avg`;
+  return "Pending refresh";
+}
+
+function getDisplayValue(item) {
+  const value = Number(item.currentValue || 0);
+  if (value > 0) return fmtINR(value);
+  const invested = Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0));
+  return invested > 0 ? fmtINR(invested) : fmtINR(0);
+}
+
+function getAverageCost(item) {
+  const cost = Number(item.costPerUnit || 0);
+  if (cost > 0) return fmtINR(cost);
+  const units = Number(item.units || 0);
+  const invested = Number(item.investedValue || 0);
+  return units > 0 && invested > 0 ? fmtINR(invested / units) : fmtINR(0);
+}
+
+function holdingCurrency(item) {
+  return String(
+    item?.currency ||
+    (String(item?.quoteSymbol || item?.symbol || "").toUpperCase().includes(".NS") ? "INR" : "USD")
+  ).toUpperCase();
+}
+
+function displayAmount(amount, fromCurrency, viewCurrency, fx) {
+  const source = String(fromCurrency || "INR").toUpperCase();
+  const view = String(viewCurrency || "INR").toUpperCase();
+  const converted = convertAmount(amount, source, view, fx);
+  return fmtMoney(converted, view);
+}
+
+function displayAmountBoth(amount, fromCurrency, fx) {
+  const source = String(fromCurrency || "INR").toUpperCase();
+  const primary = fmtMoney(amount, source);
+  const secondaryCurrency = source === "INR" ? "USD" : "INR";
+  const converted = convertAmount(amount, source, secondaryCurrency, fx);
+  return `${primary} (${fmtMoney(converted, secondaryCurrency)})`;
+}
+
 export default function PortfolioHoldings({
   holdings,
   setHoldings,
   snapshots,
   setSnapshots,
   marketProviders,
+  marketDisplayCurrency,
+  setMarketDisplayCurrency,
+  marketFx,
   showToast,
 }) {
+  const { t } = useI18n();
   const [form, setForm] = useState(emptyForm);
   const [searchState, setSearchState] = useState({ query: "", loading: false, error: "", results: [] });
   const [refreshing, setRefreshing] = useState(false);
+  const [editingId, setEditingId] = useState("");
 
   const summary = useMemo(() => {
-    const totalInvested = holdings.reduce((sum, item) => sum + Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), 0);
-    const totalValue = holdings.reduce((sum, item) => sum + Number(item.currentValue || 0), 0);
+    const totalInvested = holdings.reduce(
+      (sum, item) =>
+        sum +
+        convertAmount(
+          Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)),
+          holdingCurrency(item),
+          marketDisplayCurrency === "USD" ? "USD" : "INR",
+          marketFx
+        ),
+      0
+    );
+    const totalValue = holdings.reduce(
+      (sum, item) =>
+        sum +
+        convertAmount(
+          Number(item.currentValue || 0),
+          holdingCurrency(item),
+          marketDisplayCurrency === "USD" ? "USD" : "INR",
+          marketFx
+        ),
+      0
+    );
     const lastRefreshAt = holdings
       .map((item) => item.refreshedAt)
       .filter(Boolean)
@@ -122,12 +228,28 @@ export default function PortfolioHoldings({
       lastRefreshAt,
       errors,
     };
-  }, [holdings]);
+  }, [holdings, marketDisplayCurrency, marketFx]);
 
   const recentSnapshots = useMemo(
     () => [...snapshots].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5),
     [snapshots]
   );
+
+  const formatHoldingAmount = (amount, item) => {
+    const sourceCurrency = holdingCurrency(item);
+    if (marketDisplayCurrency === "BOTH") {
+      return displayAmountBoth(amount, sourceCurrency, marketFx);
+    }
+    return displayAmount(amount, sourceCurrency, marketDisplayCurrency, marketFx);
+  };
+
+  const formatHoldingPrice = (amount, item) => {
+    const sourceCurrency = holdingCurrency(item);
+    if (marketDisplayCurrency === "BOTH") {
+      return displayAmountBoth(amount, sourceCurrency, marketFx);
+    }
+    return displayAmount(amount, sourceCurrency, marketDisplayCurrency, marketFx);
+  };
 
   const applyResult = (item) => {
     setForm((prev) => ({
@@ -135,9 +257,33 @@ export default function PortfolioHoldings({
       kind: item.kind || prev.kind,
       name: item.name || prev.name,
       symbol: item.symbol || "",
+      quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") || "",
+      currency: item.currency || (suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "").includes(".NS") ? "INR" : "USD"),
       schemeCode: item.schemeCode || "",
     }));
     setSearchState((prev) => ({ ...prev, results: [] }));
+  };
+
+  const beginEdit = (item) => {
+    setEditingId(item.id);
+    setForm({
+      kind: item.kind || "stock",
+      name: item.name || "",
+      symbol: item.symbol || "",
+      quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || "stock", item.name || "", item.symbol || "") || "",
+      currency: item.currency || (suggestQuoteSymbol(item.kind || "stock", item.name || "", item.symbol || "").includes(".NS") ? "INR" : "USD"),
+      schemeCode: item.schemeCode || "",
+      units: String(item.units ?? ""),
+      costPerUnit: String(item.costPerUnit ?? ""),
+      account: item.account || "",
+    });
+    setSearchState({ query: "", loading: false, error: "", results: [] });
+  };
+
+  const cancelEdit = () => {
+    setEditingId("");
+    setForm(emptyForm);
+    setSearchState({ query: "", loading: false, error: "", results: [] });
   };
 
   const runSearch = async () => {
@@ -152,33 +298,59 @@ export default function PortfolioHoldings({
     }
   };
 
-  const addHolding = () => {
+  const saveHolding = () => {
     if (!form.name || !form.units || !form.costPerUnit) return;
     if (["stock", "crypto", "commodity"].includes(form.kind) && !form.symbol) return;
     if (form.kind === "mutualFund" && !form.schemeCode) return;
-    setHoldings((prev) => [
-      {
-        id: goalId(),
-        kind: form.kind,
-        name: form.name.trim(),
-        symbol: form.symbol.trim().toUpperCase(),
-        schemeCode: form.schemeCode.trim(),
-        units: Number(form.units),
-        costPerUnit: Number(form.costPerUnit),
-        account: form.account.trim(),
-        currentPrice: 0,
-        currentValue: 0,
-        investedValue: Number(form.units) * Number(form.costPerUnit),
-        gainLoss: 0,
-        priceDate: "",
-        refreshedAt: "",
-        refreshError: "",
-      },
-      ...prev,
-    ]);
+    const normalized = {
+      kind: form.kind,
+      name: form.name.trim(),
+      symbol: form.symbol.trim().toUpperCase(),
+      quoteSymbol: (form.quoteSymbol.trim().toUpperCase() || suggestQuoteSymbol(form.kind, form.name, form.symbol)),
+      currency: form.kind === "mutualFund" ? "INR" : (form.currency || (suggestQuoteSymbol(form.kind, form.name, form.symbol).includes(".NS") ? "INR" : "USD")),
+      schemeCode: form.schemeCode.trim(),
+      units: Number(form.units),
+      costPerUnit: Number(form.costPerUnit),
+      account: form.account.trim(),
+      investedValue: Number(form.units) * Number(form.costPerUnit),
+    };
+
+    if (editingId) {
+      setHoldings((prev) =>
+        prev.map((item) =>
+          item.id === editingId
+            ? {
+                ...item,
+                ...normalized,
+                gainLoss: Number(item.currentValue || 0) - normalized.investedValue,
+                refreshError: "",
+              }
+            : item
+        )
+      );
+      showToast("Holding updated. Refresh once if you want a fresh market quote.");
+    } else {
+      setHoldings((prev) => [
+        {
+          id: goalId(),
+          ...normalized,
+          currentPrice: 0,
+          currentValue: 0,
+          gainLoss: 0,
+          priceDate: "",
+          refreshedAt: "",
+          refreshError: "",
+          priceLabel: "",
+          source: "",
+        },
+        ...prev,
+      ]);
+      showToast("Holding added. Refresh once to fetch the latest price.");
+    }
+
+    setEditingId("");
     setForm((prev) => ({ ...emptyForm, kind: prev.kind }));
     setSearchState({ query: "", loading: false, error: "", results: [] });
-    showToast("Holding added. Refresh once to fetch the latest price.");
   };
 
   const removeHolding = (id) => {
@@ -190,24 +362,45 @@ export default function PortfolioHoldings({
     if (!holdings.length) return;
     setRefreshing(true);
     try {
-      const payload = await refreshMarketHoldings(holdings);
-      setHoldings(payload.holdings || []);
-      const stamp = payload.summary?.lastRefreshAt || new Date().toISOString();
+      const hydratedPayload = await refreshMarketHoldings(
+        holdings.map((item) => ({
+          ...item,
+          quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind, item.name, item.symbol),
+        }))
+      );
+      const rescuedHoldings = await rescueIndianHoldingsQuotes(hydratedPayload.holdings || []);
+      setHoldings(rescuedHoldings);
+      const stamp = hydratedPayload.summary?.lastRefreshAt || new Date().toISOString();
       const snapshotDate = stamp.slice(0, 10);
+      const totalValue = rescuedHoldings.reduce(
+        (sum, item) => sum + convertAmount(Number(item.currentValue || 0), holdingCurrency(item), "INR", marketFx),
+        0
+      );
+      const totalInvested = rescuedHoldings.reduce(
+        (sum, item) =>
+          sum + convertAmount(
+            Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)),
+            holdingCurrency(item),
+            "INR",
+            marketFx
+          ),
+        0
+      );
+      const failedCount = rescuedHoldings.filter((item) => item.refreshError).length;
       const snapshot = {
         date: snapshotDate,
         refreshedAt: stamp,
-        totalValue: Number(payload.summary?.totalValue || 0),
-        totalInvested: Number(payload.summary?.totalInvested || 0),
-        gainLoss: Number(payload.summary?.totalGainLoss || 0),
+        totalValue,
+        totalInvested,
+        gainLoss: totalValue - totalInvested,
       };
       setSnapshots((prev) => {
         const filtered = prev.filter((item) => item.date !== snapshotDate);
         return [snapshot, ...filtered].slice(0, 30);
       });
       showToast(
-        payload.summary?.failed
-          ? `Prices refreshed. ${payload.summary.failed} holding${payload.summary.failed > 1 ? "s" : ""} still need attention.`
+        failedCount
+          ? `Prices refreshed. ${failedCount} holding${failedCount > 1 ? "s" : ""} still need attention.`
           : "Portfolio prices refreshed."
       );
     } catch (error) {
@@ -221,15 +414,26 @@ export default function PortfolioHoldings({
     <div className="section-card">
       <div className="section-head" style={{ marginBottom: 14 }}>
         <div>
-          <h3>Market Holdings</h3>
+          <h3>{t("market.title", "Market Holdings")}</h3>
           <p style={{ marginBottom: 0 }}>
-            Track stocks and mutual funds separately from the cash-flow ledger, then refresh market values manually once per day.
+            Track market holdings separately from the cash-flow ledger, then refresh quotes whenever you need. Free providers work best when refreshes are spaced out.
           </p>
         </div>
         <div className="goal-head-actions">
+          <div className="tab2" style={{ minWidth: 220 }}>
+            {["INR", "USD", "BOTH"].map((option) => (
+              <button
+                key={option}
+                className={`tab2-btn ${marketDisplayCurrency === option ? "active" : ""}`}
+                onClick={() => setMarketDisplayCurrency(option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
           <span className="status-pill neutral">{holdings.length} holding{holdings.length === 1 ? "" : "s"}</span>
           <button className="btn-primary" disabled={!holdings.length || refreshing} onClick={doRefresh}>
-            {refreshing ? "Refreshing..." : "Refresh Prices"}
+            {refreshing ? "Refreshing..." : t("market.refresh", "Refresh Prices")}
           </button>
         </div>
       </div>
@@ -237,18 +441,18 @@ export default function PortfolioHoldings({
       <div className="mini-grid" style={{ marginBottom: 14 }}>
         <div className="mini-card">
           <div className="k">Invested Value</div>
-          <div className="v">{fmtINR(summary.totalInvested)}</div>
+          <div className="v">{marketDisplayCurrency === "BOTH" ? `${fmtMoney(summary.totalInvested, "INR")} (${fmtMoney(convertAmount(summary.totalInvested, "INR", "USD", marketFx), "USD")})` : fmtMoney(summary.totalInvested, marketDisplayCurrency)}</div>
           <div className="muted">Units multiplied by your average cost per unit.</div>
         </div>
         <div className="mini-card">
           <div className="k">Current Value</div>
-          <div className="v" style={{ color: "var(--invest)" }}>{fmtINR(summary.totalValue)}</div>
+          <div className="v" style={{ color: "var(--invest)" }}>{marketDisplayCurrency === "BOTH" ? `${fmtMoney(summary.totalValue, "INR")} (${fmtMoney(convertAmount(summary.totalValue, "INR", "USD", marketFx), "USD")})` : fmtMoney(summary.totalValue, marketDisplayCurrency)}</div>
           <div className="muted">Latest fetched market value from the current holdings set.</div>
         </div>
         <div className="mini-card">
           <div className="k">Unrealized P&L</div>
           <div className="v" style={{ color: summary.gainLoss >= 0 ? "var(--income)" : "var(--expense)" }}>
-            {summary.gainLoss >= 0 ? "+" : "-"}{fmtINR(Math.abs(summary.gainLoss))}
+            {summary.gainLoss >= 0 ? "+" : "-"}{marketDisplayCurrency === "BOTH" ? `${fmtMoney(Math.abs(summary.gainLoss), "INR")} (${fmtMoney(convertAmount(Math.abs(summary.gainLoss), "INR", "USD", marketFx), "USD")})` : fmtMoney(Math.abs(summary.gainLoss), marketDisplayCurrency)}
           </div>
           <div className="muted">
             Last refresh: {toLocalStamp(summary.lastRefreshAt)}
@@ -275,13 +479,13 @@ export default function PortfolioHoldings({
             <div className="setting-row" style={{ alignItems: "stretch", marginBottom: 10 }}>
               <input
                 className="setting-input"
-                placeholder={searchPlaceholder(form.kind)}
+                placeholder={form.kind === "stock" ? t("market.searchPlaceholder", "Search stock or type symbol like RELIANCE.BSE") : searchPlaceholder(form.kind)}
                 value={searchState.query}
                 onChange={(e) => setSearchState((prev) => ({ ...prev, query: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
               />
               <button className="btn-secondary" onClick={runSearch} disabled={searchState.loading}>
-                {searchState.loading ? "Searching..." : "Search"}
+                {searchState.loading ? "Searching..." : t("common.search", "Search")}
               </button>
             </div>
 
@@ -295,7 +499,7 @@ export default function PortfolioHoldings({
                       <strong>{item.name}</strong>
                       <p>{item.symbol || item.schemeCode} {item.exchange ? `• ${item.exchange}` : ""}</p>
                     </div>
-                    <span className="status-pill neutral">Use</span>
+                    <span className="status-pill neutral">{t("common.use", "Use")}</span>
                   </button>
                 ))}
               </div>
@@ -303,7 +507,7 @@ export default function PortfolioHoldings({
 
             <div className="form-grid">
               <div className="fg full">
-                <label className="fl">Holding Name</label>
+                <label className="fl">{t("market.holdingName", "Holding Name")}</label>
                 <input className="fi" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Reliance Industries, HDFC Flexi Cap..." />
               </div>
               <div className="fg">
@@ -321,30 +525,49 @@ export default function PortfolioHoldings({
                   placeholder={symbolPlaceholder(form.kind)}
                 />
               </div>
+              {form.kind !== "mutualFund" ? (
+                <div className="fg">
+                  <label className="fl">{t("market.quoteOverride", "Quote Symbol Override")}</label>
+                  <input
+                    className="fi"
+                    value={form.quoteSymbol}
+                    onChange={(e) => setForm((prev) => ({ ...prev, quoteSymbol: e.target.value }))}
+                    placeholder={quoteSymbolPlaceholder(form.kind)}
+                  />
+                </div>
+              ) : null}
               <div className="fg">
-                <label className="fl">Units</label>
+                <label className="fl">{t("market.units", "Units")}</label>
                 <input className="fi" type="number" value={form.units} onChange={(e) => setForm((prev) => ({ ...prev, units: e.target.value }))} placeholder="0" />
               </div>
               <div className="fg">
-                <label className="fl">Average Cost / Unit</label>
+                <label className="fl">{t("market.avgCost", "Average Cost / Unit")}</label>
                 <input className="fi" type="number" value={form.costPerUnit} onChange={(e) => setForm((prev) => ({ ...prev, costPerUnit: e.target.value }))} placeholder="0" />
               </div>
               <div className="fg">
-                <label className="fl">Account / Broker</label>
+                <label className="fl">{t("market.account", "Account / Broker")}</label>
                 <input className="fi" value={form.account} onChange={(e) => setForm((prev) => ({ ...prev, account: e.target.value }))} placeholder="Zerodha, Groww, Folio..." />
               </div>
               <div className="fg full">
-                <button className="btn-primary" onClick={addHolding}>Add Holding</button>
+                <div className="setting-row" style={{ alignItems: "stretch" }}>
+                  <button className="btn-primary" onClick={saveHolding}>
+                    {editingId ? t("market.saveChanges", "Save Changes") : t("market.addHolding", "Add Holding")}
+                  </button>
+                  {editingId ? (
+                    <button className="btn-secondary" onClick={cancelEdit}>{t("common.cancel", "Cancel")}</button>
+                  ) : null}
+                </div>
               </div>
             </div>
 
             <div className="muted" style={{ marginTop: 10 }}>
               {providerCopy(form.kind, marketProviders)}
+              {form.kind === "stock" ? " If a provider keeps missing an Indian stock, save the exact exchange code here, like INFY.NS or TCS.NS." : ""}
             </div>
           </div>
 
           <div>
-            <div className="chart-title" style={{ marginBottom: 10 }}>Recent Portfolio Snapshots</div>
+            <div className="chart-title" style={{ marginBottom: 10 }}>{t("market.recentSnapshots", "Recent Portfolio Snapshots")}</div>
             {recentSnapshots.length ? (
               <div className="portfolio-snapshot-grid">
                 {recentSnapshots.map((item) => (
@@ -386,33 +609,49 @@ export default function PortfolioHoldings({
                 </div>
                 <div className="tx-note">
                   {item.kind === "mutualFund" ? `Scheme ${item.schemeCode}` : item.symbol}
+                  {item.quoteSymbol && item.quoteSymbol !== item.symbol ? ` • quote ${item.quoteSymbol}` : ""}
                   {item.account ? ` • ${item.account}` : ""}
                   {item.source ? ` • ${item.source}` : ""}
                   {item.priceDate ? ` • ${item.priceLabel || "Latest"} ${item.priceDate}` : ""}
                 </div>
               </div>
               <div className="portfolio-figures">
-                <div className="portfolio-number">{fmtINR(item.currentValue || 0)}</div>
-                <div className="muted">{Number(item.units || 0).toLocaleString("en-IN")} units @ {fmtINR(item.currentPrice || 0)}</div>
+                <div className="portfolio-number">{formatHoldingAmount(Number(item.currentValue || item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</div>
+                <div className="muted">
+                  {Number(item.units || 0).toLocaleString("en-IN")} units
+                  {" • "}Avg cost {formatHoldingPrice(Number(item.costPerUnit || 0), item)}
+                  {Number(item.currentPrice || 0) > 0 ? ` • Live ${formatHoldingPrice(Number(item.currentPrice || 0), item)}` : ""}
+                </div>
               </div>
             </div>
             <div className="portfolio-subgrid">
               <div className="mini-stat">
                 <span>Invested</span>
-                <strong>{fmtINR(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0))}</strong>
+                <strong>{formatHoldingAmount(Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</strong>
               </div>
               <div className="mini-stat">
                 <span>P&L</span>
                 <strong style={{ color: Number(item.gainLoss || 0) >= 0 ? "var(--income)" : "var(--expense)" }}>
-                  {Number(item.gainLoss || 0) >= 0 ? "+" : "-"}{fmtINR(Math.abs(Number(item.gainLoss || 0)))}
+                  {Number(item.gainLoss || 0) >= 0 ? "+" : "-"}{formatHoldingAmount(Math.abs(Number(item.gainLoss || 0)), item)}
                 </strong>
               </div>
               <div className="mini-stat">
                 <span>Refresh Status</span>
-                <strong>{normalizeHoldingError(item.refreshError) ? "Needs attention" : item.refreshedAt ? "Updated" : "Pending"}</strong>
+                <strong>
+                  {normalizeHoldingError(item.refreshError)
+                    ? Number(item.currentPrice || 0) > 0
+                      ? "Using last close"
+                      : "Needs attention"
+                    : item.refreshedAt
+                      ? t("common.updated", "Updated")
+                      : t("common.pending", "Pending")}
+                </strong>
               </div>
               <div className="portfolio-actions">
-                <button className="tx-btn del" onClick={() => removeHolding(item.id)}>Delete</button>
+                <div className="setting-row" style={{ justifyContent: "flex-end" }}>
+                  <button className="tx-btn edit" onClick={() => beginEdit(item)}>{t("common.edit", "Edit")}</button>
+                  <button className="tx-btn del" onClick={() => removeHolding(item.id)}>{t("common.delete", "Delete")}</button>
+                </div>
               </div>
             </div>
             {normalizeHoldingError(item.refreshError) && <div className="auth-error" style={{ marginTop: 10, marginBottom: 0 }}>{normalizeHoldingError(item.refreshError)}</div>}
@@ -420,7 +659,7 @@ export default function PortfolioHoldings({
         )) : (
           <div className="empty-state">
             <div className="es-icon">📈</div>
-            <p>Add your first stock, mutual fund, crypto, or commodity holding to start daily valuation and P&amp;L tracking.</p>
+            <p>{t("market.noHoldings", "Add your first stock, mutual fund, crypto, or commodity holding to start daily valuation and P&L tracking.")}</p>
           </div>
         )}
       </div>

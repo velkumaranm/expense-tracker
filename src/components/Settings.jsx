@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SUPPORTED_LANGUAGES, useI18n } from "../lib/i18n";
 
 export default function Settings({
   budget,
@@ -17,7 +18,10 @@ export default function Settings({
   onSendVerificationEmail,
   onSendPasswordReset,
   onChangeEmail,
+  language,
+  setLanguage,
 }) {
+  const { t } = useI18n();
   const [nextEmail, setNextEmail] = useState(user?.email || "");
   const [accountState, setAccountState] = useState({ loading: "", error: "", ok: "" });
 
@@ -39,16 +43,28 @@ export default function Settings({
     <>
       <div className="page-header">
         <div>
-          <h1>Settings</h1>
-          <p>Appearance, budgets, AI configuration, and account preferences.</p>
+          <h1>{t("settings.title", "Settings")}</h1>
+          <p>{t("settings.subtitle", "Appearance, budgets, AI configuration, and account preferences.")}</p>
         </div>
       </div>
 
       <div className="settings-section">
-        <h3>Appearance</h3>
+        <h3>{t("settings.language", "Language")}</h3>
+        <p>{t("settings.languageHelp", "Choose the language used for the app shell and key screens.")}</p>
+        <div className="setting-row">
+          <select className="fs" value={language} onChange={(e) => setLanguage(e.target.value)}>
+            {SUPPORTED_LANGUAGES.map((option) => (
+              <option key={option.code} value={option.code}>{option.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h3>{t("settings.appearance", "Appearance")}</h3>
         <p>Switch between dark and light mode. Your preference is saved automatically.</p>
         <div className="toggle-row">
-          <span style={{ fontSize: 13, color: "var(--text)" }}>{darkMode ? "Dark mode" : "Light mode"}</span>
+          <span style={{ fontSize: 13, color: "var(--text)" }}>{darkMode ? t("theme.dark", "Dark theme") : t("theme.light", "Light theme")}</span>
           <div className="theme-row" style={{ margin: 0, border: "none", padding: 0, background: "none" }} onClick={() => setDarkMode((v) => !v)}>
             <div className={`tt-track ${darkMode ? "on" : ""}`}>
               <div className="tt-thumb" />
@@ -58,7 +74,7 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
-        <h3>Monthly Budget</h3>
+        <h3>{t("settings.budget", "Monthly Budget")}</h3>
         <p>Budget warnings are used by the dashboard and smart notifications system.</p>
         <div className="setting-row">
           <input className="setting-input" type="number" placeholder="Enter monthly limit..." value={budgetInput} onChange={(e) => setBudgetInput(e.target.value)} />
@@ -68,10 +84,10 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
-        <h3>Smart Notifications</h3>
+        <h3>{t("settings.notifications", "Smart Notifications")}</h3>
         <p>Warn about budget overruns, low savings, and unusual transactions.</p>
         <div className="toggle-row">
-          <span style={{ fontSize: 13, color: "var(--text)" }}>{notificationsEnabled ? "Enabled" : "Disabled"}</span>
+          <span style={{ fontSize: 13, color: "var(--text)" }}>{notificationsEnabled ? t("common.enabled", "Enabled") : t("common.disabled", "Disabled")}</span>
           <div className="theme-row" style={{ margin: 0, border: "none", padding: 0, background: "none" }} onClick={() => setNotificationsEnabled((v) => !v)}>
             <div className={`tt-track ${notificationsEnabled ? "on" : ""}`}>
               <div className="tt-thumb" />
@@ -81,7 +97,7 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
-        <h3>AI Proxy Configuration</h3>
+        <h3>{t("settings.ai", "AI Proxy Configuration")}</h3>
         <p>
           Provider keys now live only on the backend proxy. OpenRouter free is the default recommendation for everyday use, while OpenAI and Anthropic are available if you want premium models.
         </p>
@@ -128,7 +144,7 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
-        <h3>Market Data</h3>
+        <h3>{t("settings.market", "Market Data")}</h3>
         <p>
           Finwise now uses a fallback ladder for market refresh: Twelve Data first where it has the strongest free allowance, then Finnhub, then Alpha Vantage. Mutual funds still use a free AMFI-backed NAV feed.
         </p>
@@ -142,7 +158,7 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
-        <h3>Account</h3>
+        <h3>{t("settings.account", "Account")}</h3>
         <p>
           Signed in as <strong style={{ color: "var(--text)" }}>{user?.email || "Google User"}</strong>
         </p>

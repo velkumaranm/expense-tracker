@@ -9,6 +9,7 @@ import {
   Legend,
 } from "recharts";
 import { monthLabel, fmtINR } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 import { PIE_COLORS } from "../lib/constants";
 import { AreaTip } from "./ChartBits";
 
@@ -20,6 +21,7 @@ export default function AnalyticsReports({
   onExportPdf,
   onExportCsv,
 }) {
+  const { t } = useI18n();
   const validMonths = monthlySeries.filter((month) => month.income || month.expense || month.investment || month.insurance);
   const bestSavingsMonth = validMonths.reduce((best, month) => (!best || month.savings > best.savings ? month : best), null);
   const worstExpenseMonth = validMonths.reduce((worst, month) => (!worst || month.expense > worst.expense ? month : worst), null);
@@ -30,61 +32,61 @@ export default function AnalyticsReports({
     <>
       <div className="page-header">
         <div>
-          <h1>Analytics & Reports</h1>
-          <p>Year-over-year comparison, trend analysis, and printable reports.</p>
+          <h1>{t("analytics.title", "Analytics & Reports")}</h1>
+          <p>{t("analytics.subtitle", "Year-over-year comparison, trend analysis, and printable reports.")}</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="icon-btn" onClick={onExportCsv}>Export CSV</button>
-          <button className="btn-primary" onClick={onExportPdf}>Export PDF</button>
+          <button className="icon-btn" onClick={onExportCsv}>{t("analytics.exportCsv", "Export CSV")}</button>
+          <button className="btn-primary" onClick={onExportPdf}>{t("analytics.exportPdf", "Export PDF")}</button>
         </div>
       </div>
 
       <div className="summary-grid">
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Income YoY</div>
+          <div className="sc-label">{t("analytics.incomeYoY", "Income YoY")}</div>
           <div className="sc-value" style={{ color: "var(--income)" }}>{yoyComparison.incomeDelta}</div>
           <div className="sc-sub">{fmtINR(yoyComparison.current.income)} vs {fmtINR(yoyComparison.previous.income)}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Expense YoY</div>
+          <div className="sc-label">{t("analytics.expenseYoY", "Expense YoY")}</div>
           <div className="sc-value" style={{ color: yoyComparison.expenseUp ? "var(--expense)" : "var(--income)" }}>{yoyComparison.expenseDelta}</div>
           <div className="sc-sub">{fmtINR(yoyComparison.current.expense)} vs {fmtINR(yoyComparison.previous.expense)}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Investment YoY</div>
+          <div className="sc-label">{t("analytics.investmentYoY", "Investment YoY")}</div>
           <div className="sc-value" style={{ color: "var(--invest)" }}>{yoyComparison.investDelta}</div>
           <div className="sc-sub">{fmtINR(yoyComparison.current.investment)} vs {fmtINR(yoyComparison.previous.investment)}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Savings YoY</div>
+          <div className="sc-label">{t("analytics.savingsYoY", "Savings YoY")}</div>
           <div className="sc-value" style={{ color: "var(--accent)" }}>{yoyComparison.savingsDelta}</div>
           <div className="sc-sub">{fmtINR(yoyComparison.current.savings)} vs {fmtINR(yoyComparison.previous.savings)}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Best Savings Month</div>
+          <div className="sc-label">{t("analytics.bestSavings", "Best Savings Month")}</div>
           <div className="sc-value" style={{ color: "var(--income)" }}>{bestSavingsMonth ? fmtINR(bestSavingsMonth.savings) : "—"}</div>
-          <div className="sc-sub">{bestSavingsMonth ? bestSavingsMonth.label : "Need more history"}</div>
+          <div className="sc-sub">{bestSavingsMonth ? bestSavingsMonth.label : t("analytics.needHistory", "Need more history")}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Peak Spend Month</div>
+          <div className="sc-label">{t("analytics.peakSpend", "Peak Spend Month")}</div>
           <div className="sc-value" style={{ color: "var(--expense)" }}>{worstExpenseMonth ? fmtINR(worstExpenseMonth.expense) : "—"}</div>
-          <div className="sc-sub">{worstExpenseMonth ? worstExpenseMonth.label : "Need more history"}</div>
+          <div className="sc-sub">{worstExpenseMonth ? worstExpenseMonth.label : t("analytics.needHistory", "Need more history")}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Average Savings</div>
+          <div className="sc-label">{t("analytics.averageSavings", "Average Savings")}</div>
           <div className="sc-value" style={{ color: averageSavings >= 0 ? "var(--accent)" : "var(--expense)" }}>{fmtINR(averageSavings)}</div>
-          <div className="sc-sub">Typical monthly savings across populated months.</div>
+          <div className="sc-sub">{t("analytics.avgSavingsSub", "Typical monthly savings across populated months.")}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Average Expense</div>
+          <div className="sc-label">{t("analytics.averageExpense", "Average Expense")}</div>
           <div className="sc-value" style={{ color: "var(--expense)" }}>{fmtINR(averageExpense)}</div>
-          <div className="sc-sub">Useful as a baseline for variance and planning.</div>
+          <div className="sc-sub">{t("analytics.avgExpenseSub", "Useful as a baseline for variance and planning.")}</div>
         </div>
       </div>
 
       <div className="charts-grid">
         <div className="chart-card chart-span-6">
-          <div className="chart-title">Monthly Trend</div>
+          <div className="chart-title">{t("analytics.monthlyTrend", "Monthly Trend")}</div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={monthlySeries}>
               <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -100,7 +102,7 @@ export default function AnalyticsReports({
         </div>
 
         <div className="chart-card chart-span-6">
-          <div className="chart-title">Category Trend Lines</div>
+          <div className="chart-title">{t("analytics.categoryTrend", "Category Trend Lines")}</div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={categoryTrendSeries}>
               <CartesianGrid stroke="var(--border)" vertical={false} />
@@ -118,11 +120,11 @@ export default function AnalyticsReports({
         </div>
 
         <div className="chart-card chart-span-12">
-          <div className="chart-title">Spending Heat Map</div>
+          <div className="chart-title">{t("analytics.heatMap", "Spending Heat Map")}</div>
           <div className="heat-grid">
             {!!heatmap.rows.length && (
               <div className="heat-row" style={{ fontSize: 10, color: "var(--text3)", fontWeight: 700 }}>
-                <div>Category</div>
+                <div>{t("analytics.category", "Category")}</div>
                 {heatmap.months.map((m) => <div key={m}>{monthLabel(m)}</div>)}
               </div>
             )}

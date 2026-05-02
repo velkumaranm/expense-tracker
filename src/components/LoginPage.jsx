@@ -1,8 +1,28 @@
 import { useState } from "react";
 import { auth } from "../firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
+import { useI18n } from "../lib/i18n";
+
+const EMAIL_MEMORY_KEY = "finwise-remembered-emails";
+
+function readRememberedEmails() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(EMAIL_MEMORY_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberEmailAddress(email) {
+  const normalized = String(email || "").trim().toLowerCase();
+  if (!normalized) return;
+  const next = [normalized, ...readRememberedEmails().filter((item) => item !== normalized)].slice(0, 5);
+  window.localStorage.setItem(EMAIL_MEMORY_KEY, JSON.stringify(next));
+}
 
 export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink }) {
+  const { t } = useI18n();
   const [authTab, setAuthTab] = useState("email");
   const [signTab, setSignTab] = useState("signin");
   const [email, setEmail] = useState("");
@@ -10,10 +30,13 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
   const [magicEmail, setMagicEmail] = useState("");
   const [forgot, setForgot] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const [sentLinkEmail, setSentLinkEmail] = useState("");
+  const [rememberedEmails, setRememberedEmails] = useState(() => readRememberedEmails());
+  const [showSavedEmails, setShowSavedEmails] = useState(false);
 
   const getError = (e, fallback) => e?.message?.replace("Firebase: ", "") || fallback;
 
@@ -23,8 +46,10 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
     setOk("");
     setLoading(true);
     try {
-      if (signTab === "signin") await onLogin(email, password);
+      if (signTab === "signin") await onLogin(email, password, rememberMe);
       else await onSignup(email, password);
+      rememberEmailAddress(email);
+      setRememberedEmails(readRememberedEmails());
     } catch (e) {
       setErr(getError(e, "Authentication failed."));
     } finally {
@@ -56,11 +81,22 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
       await onSendEmailLink(magicEmail);
       setSentLinkEmail(magicEmail);
       setOk(`Sign-in link sent to ${magicEmail}.`);
+      rememberEmailAddress(magicEmail);
+      setRememberedEmails(readRememberedEmails());
     } catch (e) {
       setErr(getError(e, "Could not send sign-in link."));
     } finally {
       setLoading(false);
     }
+  };
+
+  const knownEmails = rememberedEmails.filter(Boolean);
+
+  const pickEmail = (value) => {
+    setEmail(value);
+    setMagicEmail(value);
+    setResetEmail(value);
+    setShowSavedEmails(false);
   };
 
   if (forgot) {
@@ -75,9 +111,9 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
           {!ok && (
             <>
               <div className="fg" style={{ marginBottom: 14 }}>
-                <label className="fl">Email</label>
-                <input className="fi" type="email" placeholder="you@example.com" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} />
-              </div>
+              <label className="fl">Email</label>
+              <input className="fi" name="email" autoComplete="email" type="email" placeholder="you@example.com" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} />
+            </div>
               <button className="btn-primary" onClick={handleForgot} disabled={loading}>
                 {loading ? "Sending..." : "Send Reset Link"}
               </button>
@@ -92,7 +128,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
               setOk("");
             }}
           >
-            Back to Sign In
+            {t("login.signin", "Sign In")}
           </button>
         </div>
       </div>
@@ -104,68 +140,165 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
       <div className="login-bg" />
       <div className="login-card">
         <div className="login-logo">◈ Finwise</div>
-        <div className="login-tagline">Premium personal finance command center</div>
+        <div className="login-tagline">{t("login.tagline", "Premium personal finance command center")}</div>
         <div className="tab2">
-          <button className={`tab2-btn ${authTab === "email" ? "active" : ""}`} onClick={() => setAuthTab("email")}>Email</button>
-          <button className={`tab2-btn ${authTab === "email-link" ? "active" : ""}`} onClick={() => setAuthTab("email-link")}>Magic Link</button>
+          <button className={`tab2-btn ${authTab === "email" ? "active" : ""}`} onClick={() => setAuthTab("email")}>{t("login.email", "Email")}</button>
+          <button className={`tab2-btn ${authTab === "email-link" ? "active" : ""}`} onClick={() => setAuthTab("email-link")}>{t("login.magic", "Magic Link")}</button>
         </div>
         {err && <div className="auth-error">{err}</div>}
         {ok && <div className="auth-ok">{ok}</div>}
         {authTab === "email" ? (
           <>
             <div className="tab2" style={{ marginBottom: 16 }}>
-              <button className={`tab2-btn ${signTab === "signin" ? "active" : ""}`} onClick={() => setSignTab("signin")}>Sign In</button>
-              <button className={`tab2-btn ${signTab === "signup" ? "active" : ""}`} onClick={() => setSignTab("signup")}>Sign Up</button>
+              <button className={`tab2-btn ${signTab === "signin" ? "active" : ""}`} onClick={() => setSignTab("signin")}>{t("login.signin", "Sign In")}</button>
+              <button className={`tab2-btn ${signTab === "signup" ? "active" : ""}`} onClick={() => setSignTab("signup")}>{t("login.signup", "Sign Up")}</button>
             </div>
-            <div className="fg" style={{ marginBottom: 12 }}>
-              <label className="fl">Email</label>
-              <input className="fi" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <div className="fg" style={{ marginBottom: 12, position: "relative" }}>
+              <label className="fl">{t("login.email", "Email")}</label>
+              <input
+                className="fi"
+                name="username"
+                autoComplete="username email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onFocus={() => setShowSavedEmails(true)}
+                onBlur={() => setTimeout(() => setShowSavedEmails(false), 120)}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              {showSavedEmails && knownEmails.length ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    insetInline: 0,
+                    top: "100%",
+                    marginTop: 6,
+                    background: "var(--card)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 16,
+                    padding: 8,
+                    boxShadow: "0 18px 40px rgba(0,0,0,.08)",
+                    zIndex: 20,
+                  }}
+                >
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Saved accounts</div>
+                  <div className="stack" style={{ gap: 6 }}>
+                    {knownEmails.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className="btn-secondary"
+                        style={{ width: "100%", justifyContent: "flex-start", textAlign: "left" }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pickEmail(item);
+                        }}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <div className="fg" style={{ marginBottom: 4 }}>
-              <label className="fl">Password</label>
-              <input className="fi" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleEmail()} />
+              <label className="fl">{t("login.password", "Password")}</label>
+              <input className="fi" name="current-password" autoComplete="current-password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleEmail()} />
             </div>
-            {signTab === "signin" && <span className="forgot-link" onClick={() => setForgot(true)}>Forgot password?</span>}
+            {signTab === "signin" ? (
+              <div className="setting-row" style={{ marginBottom: 10, alignItems: "center", justifyContent: "space-between" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text2)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+                  {t("login.keep", "Keep me signed in on this device")}
+                </label>
+                <span className="forgot-link" onClick={() => setForgot(true)}>{t("login.forgot", "Forgot password?")}</span>
+              </div>
+            ) : null}
             <button className="btn-primary" onClick={handleEmail} disabled={loading}>
-              {loading ? "Please wait..." : signTab === "signin" ? "Sign In" : "Create Account"}
+              {loading ? "Please wait..." : signTab === "signin" ? t("login.signin", "Sign In") : t("login.signup", "Sign Up")}
             </button>
             <div className="divider">or</div>
-            <button className="google-btn" onClick={onGoogle}>Continue with Google</button>
+            <button className="google-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
           </>
         ) : (
           <>
             <div className="magic-header">
-              <strong>Passwordless sign-in</strong>
-              <p>Get a secure sign-in link by email. It is faster than a code and works smoothly across desktop and mobile.</p>
+              <strong>{t("login.passwordless", "Passwordless sign-in")}</strong>
+              <p>{t("login.passwordlessHelp", "Get a secure sign-in link by email. It is faster than a code and works smoothly across desktop and mobile.")}</p>
             </div>
-            <div className="fg" style={{ marginBottom: 8 }}>
-              <label className="fl">Email</label>
-              <input className="fi" type="email" placeholder="you@example.com" value={magicEmail} onChange={(e) => setMagicEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleEmailLink()} />
+            <div className="fg" style={{ marginBottom: 8, position: "relative" }}>
+              <label className="fl">{t("login.email", "Email")}</label>
+              <input
+                className="fi"
+                name="email-link"
+                autoComplete="email"
+                type="email"
+                placeholder="you@example.com"
+                value={magicEmail}
+                onFocus={() => setShowSavedEmails(true)}
+                onBlur={() => setTimeout(() => setShowSavedEmails(false), 120)}
+                onChange={(e) => setMagicEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleEmailLink()}
+              />
+              {showSavedEmails && knownEmails.length ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    insetInline: 0,
+                    top: "100%",
+                    marginTop: 6,
+                    background: "var(--card)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 16,
+                    padding: 8,
+                    boxShadow: "0 18px 40px rgba(0,0,0,.08)",
+                    zIndex: 20,
+                  }}
+                >
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("login.savedAccounts", "Saved accounts")}</div>
+                  <div className="stack" style={{ gap: 6 }}>
+                    {knownEmails.map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        className="btn-secondary"
+                        style={{ width: "100%", justifyContent: "flex-start", textAlign: "left" }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          pickEmail(item);
+                        }}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
             <p className="muted" style={{ marginBottom: 14 }}>
-              We will send a one-tap sign-in link to your inbox. If you do not see it quickly, check Promotions or Spam first.
+              {t("login.magicHint", "We will send a one-tap sign-in link to your inbox. If you do not see it quickly, check Promotions or Spam first.")}
             </p>
             <button className="btn-primary" onClick={handleEmailLink} disabled={loading}>
-              {loading ? "Sending..." : sentLinkEmail ? "Resend Sign-In Link" : "Send Sign-In Link"}
+              {loading ? "Sending..." : sentLinkEmail ? t("login.resendLink", "Resend Sign-In Link") : t("login.sendLink", "Send Sign-In Link")}
             </button>
             {sentLinkEmail && (
               <div className="magic-checklist">
                 <div className="magic-check-item">
                   <span className="magic-check-dot" />
-                  Sent to <strong>{sentLinkEmail}</strong>
+                  {t("login.sentTo", "Sent to")} <strong>{sentLinkEmail}</strong>
                 </div>
                 <div className="magic-check-item">
                   <span className="magic-check-dot" />
-                  Open the email on this same device for the smoothest sign-in
+                  {t("login.sameDevice", "Open the email on this same device for the smoothest sign-in")}
                 </div>
                 <div className="magic-check-item">
                   <span className="magic-check-dot" />
-                  Check Inbox, Promotions, and Spam if it does not show up right away
+                  {t("login.checkFolders", "Check Inbox, Promotions, and Spam if it does not show up right away")}
                 </div>
               </div>
             )}
             <div className="divider">or</div>
-            <button className="google-btn" onClick={onGoogle}>Continue with Google</button>
+            <button className="google-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
           </>
         )}
       </div>

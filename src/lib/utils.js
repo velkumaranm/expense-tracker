@@ -19,6 +19,31 @@ export const fmtINR = (n) => {
   return `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 };
 
+export const fmtUSD = (n) => {
+  if (n == null || Number.isNaN(n)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(Number(n));
+};
+
+export const fmtMoney = (n, currency = "INR") =>
+  String(currency).toUpperCase() === "USD" ? fmtUSD(n) : fmtINR(n);
+
+export const convertAmount = (amount, fromCurrency = "INR", toCurrency = "INR", fx = {}) => {
+  const value = Number(amount || 0);
+  const from = String(fromCurrency || "INR").toUpperCase();
+  const to = String(toCurrency || "INR").toUpperCase();
+  if (!Number.isFinite(value)) return 0;
+  if (from === to) return value;
+  const usdInr = Number(fx?.usdInr || 0);
+  if (!usdInr) return value;
+  if (from === "USD" && to === "INR") return value * usdInr;
+  if (from === "INR" && to === "USD") return value / usdInr;
+  return value;
+};
+
 export const safeJSON = (v, fallback) => {
   try {
     return JSON.parse(v ?? "");

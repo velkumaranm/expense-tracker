@@ -1,6 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { auth, db } from "./firebase";
 import {
+  browserLocalPersistence,
+  browserSessionPersistence,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -13,6 +15,7 @@ import {
   signInWithEmailLink,
   sendEmailVerification,
   sendPasswordResetEmail,
+  setPersistence,
   verifyBeforeUpdateEmail,
 } from "firebase/auth";
 import {
@@ -35,6 +38,7 @@ import {
 } from "./lib/ai";
 import {
   buildPie,
+  convertAmount,
   fmtINR,
   getMonthRange,
   getStorageKey,
@@ -44,6 +48,8 @@ import {
   toLocalDateStr,
   toYYYYMM,
 } from "./lib/utils";
+import { fetchMarketFx } from "./lib/market";
+import { I18nProvider, getTranslation } from "./lib/i18n";
 
 const Dashboard = lazy(() => import("./components/Dashboard"));
 const AddForm = lazy(() => import("./components/AddForm"));
@@ -92,6 +98,9 @@ export default function App() {
   const [liabilities, setLiabilities] = useState([]);
   const [holdings, setHoldings] = useState([]);
   const [portfolioSnapshots, setPortfolioSnapshots] = useState([]);
+  const [marketDisplayCurrency, setMarketDisplayCurrency] = useState("INR");
+  const [marketFx, setMarketFx] = useState({ usdInr: 83, source: "fallback", asOf: "" });
+  const [language, setLanguage] = useState("en");
   const [aiConfig, setAiConfig] = useState({
     provider: "openrouter",
     model: "openrouter/free",
@@ -114,6 +123,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(toYYYYMM(new Date()));
+  const t = (key, fallback = "") => getTranslation(language, key, fallback);
   const toastTimerRef = useRef(null);
   const latestAlertsRef = useRef("");
   const profileReadyRef = useRef(false);
@@ -166,7 +176,51 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    getAIBackendHealth().then(setBackendHealth).catch(() => {});
+    let disposed = false;
+    let timer = null;
+
+    const loadHealth = async () => {
+      try {
+        const next = await getAIBackendHealth();
+        if (!disposed) setBackendHealth(next);
+      } catch {
+        if (!disposed) {
+          timer = window.setTimeout(loadHealth, 5000);
+        }
+      }
+    };
+
+    loadHealth();
+    const onFocus = () => loadHealth();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+
+    return () => {
+      disposed = true;
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const loadFx = async () => {
+      try {
+        const data = await fetchMarketFx();
+        if (!disposed) {
+          setMarketFx({
+            usdInr: Number(data?.rate || 83),
+            source: data?.source || "fallback",
+            asOf: data?.asOf || "",
+          });
+        }
+      } catch {}
+    };
+    loadFx();
+    return () => {
+      disposed = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -181,6 +235,8 @@ export default function App() {
         liabilities: safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []),
         holdings: safeJSON(localStorage.getItem(getStorageKey(uid, "holdings")), []),
         portfolioSnapshots: safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots")), []),
+        marketDisplayCurrency: localStorage.getItem(getStorageKey(uid, "market-display-currency")) || "INR",
+        language: localStorage.getItem(getStorageKey(uid, "language")) || "en",
         aiConfig: { provider: "openrouter", model: "openrouter/free", freeModel: "openrouter/free", ...safeJSON(localStorage.getItem(getStorageKey(uid, "ai-config")), {}) },
         budget: localStorage.getItem(getStorageKey(uid, "budget")) || "",
         notificationsEnabled: (() => {
@@ -202,6 +258,8 @@ export default function App() {
       setLiabilities(Array.isArray(data.liabilities) ? data.liabilities : []);
       setHoldings(Array.isArray(data.holdings) ? data.holdings : []);
       setPortfolioSnapshots(Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []);
+      setMarketDisplayCurrency(data.marketDisplayCurrency || "INR");
+      setLanguage(data.language || "en");
       setAiConfig(data.aiConfig || localFallback.aiConfig);
       setBudget(data.budget || "");
       setBudgetInput(data.budget || "");
@@ -213,6 +271,8 @@ export default function App() {
         liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
         holdings: Array.isArray(data.holdings) ? data.holdings : [],
         portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
+        marketDisplayCurrency: data.marketDisplayCurrency || "INR",
+        language: data.language || "en",
         aiConfig: data.aiConfig || localFallback.aiConfig,
         budget: data.budget || "",
         notificationsEnabled: data.notificationsEnabled !== false,
@@ -226,6 +286,8 @@ export default function App() {
           liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
           holdings: Array.isArray(data.holdings) ? data.holdings : [],
           portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
+          marketDisplayCurrency: data.marketDisplayCurrency || "INR",
+          language: data.language || "en",
           aiConfig: data.aiConfig || localFallback.aiConfig,
           budget: data.budget || "",
           notificationsEnabled: data.notificationsEnabled !== false,
@@ -240,10 +302,12 @@ export default function App() {
     liabilities,
     holdings,
     portfolioSnapshots,
+    marketDisplayCurrency,
+    language,
     aiConfig,
     budget,
     notificationsEnabled,
-  }), [goals, assets, liabilities, holdings, portfolioSnapshots, aiConfig, budget, notificationsEnabled]);
+  }), [goals, assets, liabilities, holdings, portfolioSnapshots, marketDisplayCurrency, language, aiConfig, budget, notificationsEnabled]);
 
   useEffect(() => {
     if (!user || !profileReadyRef.current) return;
@@ -275,6 +339,14 @@ export default function App() {
   }, [portfolioSnapshots, user]);
   useEffect(() => {
     if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "market-display-currency"), marketDisplayCurrency);
+  }, [marketDisplayCurrency, user]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "language"), language);
+  }, [language, user]);
+  useEffect(() => {
+    if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "ai-config"), JSON.stringify(aiConfig));
   }, [aiConfig, user]);
   useEffect(() => {
@@ -292,7 +364,10 @@ export default function App() {
     toastTimerRef.current = setTimeout(() => setToast(null), 3500);
   }, []);
 
-  const handleLogin = (e, p) => signInWithEmailAndPassword(auth, e, p);
+  const handleLogin = async (e, p, rememberMe = true) => {
+    await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
+    return signInWithEmailAndPassword(auth, e, p);
+  };
   const handleSignup = async (e, p) => {
     const cred = await createUserWithEmailAndPassword(auth, e, p);
     if (cred.user && !cred.user.emailVerified) {
@@ -428,6 +503,11 @@ export default function App() {
   const allTimeExpense = sumByType(expenses, "expense");
   const allTimeInvestment = sumByType(expenses, "investment");
   const allTimeInsurance = sumByType(expenses, "insurance");
+  const holdingCurrency = (item) =>
+    String(
+      item?.currency ||
+      (String(item?.quoteSymbol || item?.symbol || "").toUpperCase().includes(".NS") ? "INR" : "USD")
+    ).toUpperCase();
   const allTimeMarketInvestment = expenses
     .filter((item) => item.type === "investment" && LIVE_MARKET_CATEGORIES.has(item.category))
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -435,15 +515,26 @@ export default function App() {
   const liveHoldingsValue = holdings.reduce(
     (sum, item) =>
       sum +
-      Number(
-        item.currentValue ||
-        item.investedValue ||
-        (Number(item.units || 0) * Number(item.costPerUnit || 0))
+      convertAmount(
+        Number(
+          item.currentValue ||
+          item.investedValue ||
+          (Number(item.units || 0) * Number(item.costPerUnit || 0))
+        ),
+        holdingCurrency(item),
+        "INR",
+        marketFx
       ),
     0
   );
   const portfolioInvestedValue = holdings.reduce(
-    (sum, item) => sum + Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)),
+    (sum, item) =>
+      sum + convertAmount(
+        Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)),
+        holdingCurrency(item),
+        "INR",
+        marketFx
+      ),
     0
   );
   const portfolioGainLoss = liveHoldingsValue - portfolioInvestedValue;
@@ -744,31 +835,31 @@ export default function App() {
   }
 
   const NAV = [
-    { id: "dashboard", icon: "◉", label: "Overview" },
-    { id: "ai", icon: "✦", label: "AI Insights" },
-    { id: "analytics", icon: "📊", label: "Analytics" },
-    { id: "goals", icon: "◎", label: "Goals" },
-    { id: "wealth", icon: "⬢", label: "Net Worth" },
-    { id: "add", icon: "＋", label: "Add" },
-    { id: "history", icon: "≡", label: "History" },
-    { id: "import", icon: "⬆", label: "Import" },
-    { id: "settings", icon: "⚙", label: "Settings" },
+    { id: "dashboard", icon: "◉", label: t("nav.overview", "Overview") },
+    { id: "ai", icon: "✦", label: t("nav.ai", "AI Insights") },
+    { id: "analytics", icon: "📊", label: t("nav.analytics", "Analytics") },
+    { id: "goals", icon: "◎", label: t("nav.goals", "Goals") },
+    { id: "wealth", icon: "⬢", label: t("nav.wealth", "Net Worth") },
+    { id: "add", icon: "＋", label: t("nav.add", "Add") },
+    { id: "history", icon: "≡", label: t("nav.history", "History") },
+    { id: "import", icon: "⬆", label: t("nav.import", "Import") },
+    { id: "settings", icon: "⚙", label: t("nav.settings", "Settings") },
   ];
 
   const MOBILE_NAV = [
     { id: "dashboard", icon: "◉", label: "Home" },
     { id: "ai", icon: "✦", label: "AI" },
     { id: "add", fab: true },
-    { id: "history", icon: "≡", label: "History" },
-    { id: "goals", icon: "◎", label: "Goals" },
+    { id: "history", icon: "≡", label: t("nav.history", "History") },
+    { id: "goals", icon: "◎", label: t("nav.goals", "Goals") },
     { id: "more", icon: "⚙", label: "More", more: true },
   ];
 
   const MOBILE_MORE_ITEMS = [
-    { id: "analytics", icon: "📊", label: "Analytics" },
-    { id: "wealth", icon: "⬢", label: "Net Worth" },
-    { id: "import", icon: "⬆", label: "Import" },
-    { id: "settings", icon: "⚙", label: "Settings" },
+    { id: "analytics", icon: "📊", label: t("nav.analytics", "Analytics") },
+    { id: "wealth", icon: "⬢", label: t("nav.wealth", "Net Worth") },
+    { id: "import", icon: "⬆", label: t("nav.import", "Import") },
+    { id: "settings", icon: "⚙", label: t("nav.settings", "Settings") },
   ];
 
   const tabLoadingFallback = (
@@ -855,6 +946,9 @@ export default function App() {
           snapshots={portfolioSnapshots}
           setSnapshots={setPortfolioSnapshots}
           marketProviders={backendHealth.marketProviders}
+          marketDisplayCurrency={marketDisplayCurrency}
+          setMarketDisplayCurrency={setMarketDisplayCurrency}
+          marketFx={marketFx}
           showToast={showToast}
         />
       );
@@ -926,6 +1020,8 @@ export default function App() {
           onSendVerificationEmail={handleSendVerificationEmail}
           onSendPasswordReset={handleSendPasswordReset}
           onChangeEmail={handleChangeEmail}
+          language={language}
+          setLanguage={setLanguage}
         />
       );
     }
@@ -933,6 +1029,7 @@ export default function App() {
   };
 
   return (
+    <I18nProvider language={language} setLanguage={setLanguage}>
     <>
       <style>{CSS}</style>
       {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}
@@ -940,7 +1037,7 @@ export default function App() {
         <aside className="sidebar">
           <div className="sidebar-logo">
             <div className="wordmark">◈ Finwise</div>
-            <div className="tagline">AI Finance Tracker</div>
+            <div className="tagline">{t("app.tagline", "AI Finance Tracker")}</div>
           </div>
           {NAV.map((item) => (
             <div key={item.id} className={`nav-item ${activeTab === item.id ? "active" : ""}`} onClick={() => setActiveTab(item.id)}>
@@ -950,7 +1047,7 @@ export default function App() {
           <div className="sidebar-spacer" />
           <div style={{ padding: "0 8px 8px" }}>
             <div className="theme-row" onClick={() => setDarkMode((v) => !v)}>
-              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text2)" }}>{darkMode ? "Dark theme" : "Light theme"}</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text2)" }}>{darkMode ? t("theme.dark", "Dark theme") : t("theme.light", "Light theme")}</span>
               <div className={`tt-track ${darkMode ? "on" : ""}`}>
                 <div className="tt-thumb" />
               </div>
@@ -961,7 +1058,7 @@ export default function App() {
               <div className="user-avatar">{(user?.email || user?.phoneNumber || "U")[0].toUpperCase()}</div>
               <div className="user-email">{user?.email || user?.phoneNumber}</div>
             </div>
-            <button className="logout-btn" onClick={logout}>Sign Out</button>
+            <button className="logout-btn" onClick={logout}>{t("auth.signout", "Sign Out")}</button>
           </div>
         </aside>
 
@@ -999,7 +1096,7 @@ export default function App() {
             <div className="mobile-more-sheet" onClick={(e) => e.stopPropagation()}>
               <div className="section-head" style={{ marginBottom: 12 }}>
                 <div>
-                  <h3>More</h3>
+                  <h3>{t("nav.more", "More")}</h3>
                   <p style={{ marginBottom: 0 }}>Quick access to the rest of your finance workspace.</p>
                 </div>
                 <button className="icon-btn" onClick={() => setMobileMenuOpen(false)}>Close</button>
@@ -1024,5 +1121,6 @@ export default function App() {
         )}
       </div>
     </>
+    </I18nProvider>
   );
 }
