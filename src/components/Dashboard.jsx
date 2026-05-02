@@ -38,10 +38,17 @@ export default function Dashboard({
   totalTransactions,
   assetCount,
   liabilityCount,
+  onboardingState,
+  setOnboardingState,
+  plannerSummary,
+  subscriptionSummary,
+  vaultSummary,
+  onLoadDemo,
   onJumpToAdd,
   onJumpToImport,
   onJumpToGoals,
   onJumpToNetWorth,
+  onJumpToVault,
 }) {
   const { t } = useI18n();
   const balanceTone = totals.balance >= 0 ? "var(--income)" : "var(--expense)";
@@ -53,7 +60,15 @@ export default function Dashboard({
     totalTransactions > 0,
     goals.length > 0,
     assetCount + liabilityCount > 0,
+    subscriptionSummary.recurringCount > 0,
+    vaultSummary.totalDocs > 0,
   ].filter(Boolean).length;
+  const firstMonthSteps = [
+    { done: totalTransactions > 0, title: "Capture your first cash flow", body: "Add salary plus 2-3 major expenses so the dashboard stops feeling generic.", action: onJumpToAdd, cta: "Add first entries" },
+    { done: goals.length > 0, title: "Name one near-term goal", body: "Even one active goal gives the planner and AI something concrete to optimize.", action: onJumpToGoals, cta: "Create a goal" },
+    { done: assetCount + liabilityCount > 0, title: "Complete the balance sheet", body: "Add at least one asset or liability so runway and wealth become real.", action: onJumpToNetWorth, cta: "Open net worth" },
+    { done: vaultSummary.totalDocs > 0, title: "Anchor a key document", body: "One policy or loan reminder makes the vault useful immediately.", action: onJumpToVault, cta: "Open vault" },
+  ];
 
   return (
     <>
@@ -66,7 +81,7 @@ export default function Dashboard({
 
       <MonthStrip months={months} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
 
-      {setupScore < 3 && (
+      {setupScore < 5 && (
         <div className="section-card" style={{ marginBottom: 14 }}>
           <div className="section-head" style={{ marginBottom: 12 }}>
             <div>
@@ -75,7 +90,27 @@ export default function Dashboard({
                 A few pieces of data will make the dashboards, AI, goals, and net worth views much more useful.
               </p>
             </div>
-            <span className="status-pill neutral">{setupScore}/3 complete</span>
+            <span className="status-pill neutral">{setupScore}/5 complete</span>
+          </div>
+          <div className="planner-grid" style={{ marginBottom: 12 }}>
+            <div className="fg">
+              <label className="fl">Profile type</label>
+              <select className="fs" value={onboardingState.profileType} onChange={(e) => setOnboardingState((prev) => ({ ...prev, profileType: e.target.value }))}>
+                {["salary", "business", "family", "student"].map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+            <div className="fg">
+              <label className="fl">Household mode</label>
+              <select className="fs" value={onboardingState.householdMode} onChange={(e) => setOnboardingState((prev) => ({ ...prev, householdMode: e.target.value }))}>
+                {["personal", "shared", "family"].map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+            <div className="fg">
+              <label className="fl">Primary focus</label>
+              <select className="fs" value={onboardingState.primaryFocus} onChange={(e) => setOnboardingState((prev) => ({ ...prev, primaryFocus: e.target.value }))}>
+                {["wealth", "stability", "retirement", "debt-free"].map((option) => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
           </div>
           <div className="onboarding-grid">
             <div className="insight-item">
@@ -93,7 +128,40 @@ export default function Dashboard({
               <p>{assetCount + liabilityCount > 0 ? `${assetCount} asset${assetCount !== 1 ? "s" : ""} and ${liabilityCount} liabilit${liabilityCount === 1 ? "y" : "ies"} are already included.` : "Adding assets and liabilities makes runway, debt, and wealth diagnostics more realistic."}</p>
               {!(assetCount + liabilityCount > 0) && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToNetWorth}>{t("dashboard.setupCtaAsset", "Add Assets")}</button>}
             </div>
+            <div className="insight-item">
+              <strong>{subscriptionSummary.recurringCount ? "Recurring bills mapped" : "Mark your bills recurring"}</strong>
+              <p>{subscriptionSummary.recurringCount ? `${subscriptionSummary.recurringCount} recurring cash commitments are now feeding bill intelligence.` : "Recurring flags help Finwise build bill calendars, renewal insight, and subscription totals automatically."}</p>
+              {!subscriptionSummary.recurringCount && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToAdd}>Add recurring bill</button>}
+            </div>
+            <div className="insight-item">
+              <strong>{vaultSummary.totalDocs ? "Vault reminders active" : "Add your first document reminder"}</strong>
+              <p>{vaultSummary.totalDocs ? `${vaultSummary.totalDocs} document reminder${vaultSummary.totalDocs !== 1 ? "s are" : " is"} now tracked inside the vault.` : "Policies, tax packs, and loan papers become much more useful when renewal dates live in the same system."}</p>
+              {!vaultSummary.totalDocs && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToVault}>Open vault</button>}
+            </div>
           </div>
+          {!totalTransactions && (
+            <div className="section-card" style={{ marginTop: 12, marginBottom: 0, background: "var(--card2)" }}>
+              <div className="section-head" style={{ marginBottom: 10 }}>
+                <div>
+                  <h3>First Month Guided Flow</h3>
+                  <p style={{ marginBottom: 0 }}>A simple month-one sequence so new users land in momentum instead of an empty system.</p>
+                </div>
+                <button className="btn-secondary" onClick={onLoadDemo}>Load Demo Mode</button>
+              </div>
+              <div className="stack">
+                {firstMonthSteps.map((step, index) => (
+                  <div key={step.title} className="timeline-item">
+                    <div className="timeline-date">{step.done ? "Done" : `Step ${index + 1}`}</div>
+                    <div className="timeline-body">
+                      <strong>{step.title}</strong>
+                      <p className="muted" style={{ marginTop: 4 }}>{step.body}</p>
+                    </div>
+                    {!step.done ? <button className="btn-secondary" onClick={step.action}>{step.cta}</button> : <span className="status-pill verified">Completed</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {!totalTransactions && (
             <button className="btn-primary" style={{ marginTop: 12 }} onClick={onJumpToImport}>
               {t("dashboard.setupCtaImport", "Import Existing Data")}
@@ -275,6 +343,71 @@ export default function Dashboard({
               )}
             </div>
           )}
+        </div>
+
+        <div className="chart-card chart-span-4">
+          <div className="chart-title">Subscription & Bill Intelligence</div>
+          <div className="mini-grid">
+            <div className="mini-card">
+              <div className="k">Monthly subscriptions</div>
+              <div className="v" style={{ color: "var(--accent)" }}>{fmtINR(subscriptionSummary.monthly)}</div>
+              <div className="muted">{subscriptionSummary.subscriptionCount} tracked subscription{subscriptionSummary.subscriptionCount === 1 ? "" : "s"} annualizing to {fmtINR(subscriptionSummary.annual)}.</div>
+            </div>
+            <div className="mini-card">
+              <div className="k">Annual recurring load</div>
+              <div className="v">{fmtINR(subscriptionSummary.recurringAnnual)}</div>
+              <div className="muted">Across bills, EMIs, and subscriptions marked recurring.</div>
+            </div>
+            <div className="mini-card">
+              <div className="k">Next due items</div>
+              <div className="v">{subscriptionSummary.upcomingBills.length}</div>
+              <div className="muted">
+                {subscriptionSummary.upcomingBills.slice(0, 2).map((bill) => `${bill.category} ${bill.nextDate.toLocaleDateString("en-IN")}`).join(" • ") || "No recurring due dates yet."}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="chart-card chart-span-4">
+          <div className="chart-title">Planner Pulse</div>
+          <div className="mini-grid">
+            <div className="mini-card">
+              <div className="k">Emergency fund gap</div>
+              <div className="v" style={{ color: plannerSummary.emergencyGap > 0 ? "var(--accent)" : "var(--income)" }}>{fmtINR(plannerSummary.emergencyGap)}</div>
+              <div className="muted">{plannerSummary.emergencyCoverageMonths.toFixed(1)} months of cover is already in place.</div>
+            </div>
+            <div className="mini-card">
+              <div className="k">Retirement gap</div>
+              <div className="v" style={{ color: plannerSummary.retirementGap > 0 ? "var(--accent)" : "var(--income)" }}>{fmtINR(plannerSummary.retirementGap)}</div>
+              <div className="muted">Projected corpus versus inflation-adjusted retirement target.</div>
+            </div>
+            <div className="mini-card">
+              <div className="k">EMI stress</div>
+              <div className="v" style={{ color: plannerSummary.emiStress > 35 ? "var(--expense)" : "var(--accent)" }}>{plannerSummary.emiStress ? `${plannerSummary.emiStress.toFixed(1)}%` : "—"}</div>
+              <div className="muted">Share of income currently consumed by EMI commitments.</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="chart-card chart-span-4">
+          <div className="chart-title">Vault Reminders</div>
+          <div className="mini-grid">
+            <div className="mini-card">
+              <div className="k">Tracked docs</div>
+              <div className="v">{vaultSummary.totalDocs}</div>
+              <div className="muted">Insurance, tax, loan, and investment references inside Finwise.</div>
+            </div>
+            <div className="mini-card">
+              <div className="k">Due soon</div>
+              <div className="v" style={{ color: vaultSummary.dueSoon ? "var(--accent)" : "var(--income)" }}>{vaultSummary.dueSoon}</div>
+              <div className="muted">Renewals whose reminder window is already open.</div>
+            </div>
+            <div className="mini-card">
+              <div className="k">Expired</div>
+              <div className="v" style={{ color: vaultSummary.expired ? "var(--expense)" : "var(--income)" }}>{vaultSummary.expired}</div>
+              <div className="muted">Documents or policies that now need immediate attention.</div>
+            </div>
+          </div>
         </div>
       </div>
     </>

@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import {
   loadLocalEnv,
   healthPayload,
+  resolveViewerAccess,
   runProvider,
 } from "./ai-runtime.mjs";
 import {
@@ -20,7 +21,7 @@ const json = (res, status, body) => {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-headers": "content-type,authorization",
   });
   res.end(JSON.stringify(body));
 };
@@ -46,7 +47,8 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && req.url === "/api/ai/health") {
-    json(res, 200, healthPayload());
+    const access = await resolveViewerAccess(req.headers.authorization || "");
+    json(res, 200, healthPayload({ includeSensitive: access.isAdmin, viewerRole: access.viewerRole }));
     return;
   }
 

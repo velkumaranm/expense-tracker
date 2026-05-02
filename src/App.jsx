@@ -17,6 +17,7 @@ import {
   sendPasswordResetEmail,
   setPersistence,
   verifyBeforeUpdateEmail,
+  getIdTokenResult,
 } from "firebase/auth";
 import {
   collection,
@@ -39,10 +40,12 @@ import {
 import {
   buildPie,
   convertAmount,
+  annualizedRecurringAmount,
   fmtINR,
   getMonthRange,
   getStorageKey,
   monthLabel,
+  nextRecurringDate,
   safeJSON,
   sumByType,
   toLocalDateStr,
@@ -50,6 +53,13 @@ import {
 } from "./lib/utils";
 import { fetchMarketFx } from "./lib/market";
 import { I18nProvider, getTranslation } from "./lib/i18n";
+import {
+  authenticateWithLocalPasskey,
+  createLocalPasskey,
+  getStoredPasskeys,
+  isPasskeySupported,
+  removeLocalPasskey,
+} from "./lib/passkey";
 
 const Dashboard = lazy(() => import("./components/Dashboard"));
 const AddForm = lazy(() => import("./components/AddForm"));
@@ -60,6 +70,8 @@ const AnalyticsReports = lazy(() => import("./components/AnalyticsReports"));
 const GoalsTargets = lazy(() => import("./components/GoalsTargets"));
 const NetWorthTracker = lazy(() => import("./components/NetWorthTracker"));
 const Settings = lazy(() => import("./components/Settings"));
+const DocumentsVault = lazy(() => import("./components/DocumentsVault"));
+const TimelineView = lazy(() => import("./components/TimelineView"));
 
 const LIVE_MARKET_CATEGORIES = new Set([
   "Stocks — NSE/BSE",
@@ -69,6 +81,39 @@ const LIVE_MARKET_CATEGORIES = new Set([
   "Mutual Fund — Hybrid",
   "Index Fund / ETF",
 ]);
+
+const DEFAULT_PLANNER_STATE = {
+  emergencyFundMonths: 6,
+  currentEmergencyFund: "",
+  monthlyHouseholdExpense: "",
+  currentAge: 30,
+  retirementAge: 58,
+  currentRetirementCorpus: "",
+  monthlyRetirementContribution: "",
+  expectedReturn: 10,
+  inflationRate: 6,
+  loanPrincipal: "",
+  loanRate: "",
+  loanRemainingMonths: "",
+  emiAmount: "",
+  annualIncome: "",
+  currentInvestableAssets: "",
+  monthlyGoalContribution: "",
+  fireMultiple: 25,
+  dependents: "",
+  currentInsuranceCover: "",
+  totalLiabilities: "",
+  coverMultiplier: 12,
+  primaryAllocationMode: "balanced",
+};
+
+const DEFAULT_ONBOARDING_STATE = {
+  profileType: "salary",
+  householdMode: "personal",
+  primaryFocus: "wealth",
+  wizardStep: 0,
+  demoSeeded: false,
+};
 
 export default function App() {
   const emailActionSettings = {
@@ -101,16 +146,23 @@ export default function App() {
   const [marketDisplayCurrency, setMarketDisplayCurrency] = useState("INR");
   const [marketFx, setMarketFx] = useState({ usdInr: 83, source: "fallback", asOf: "" });
   const [language, setLanguage] = useState("en");
+  const [onboardingState, setOnboardingState] = useState(DEFAULT_ONBOARDING_STATE);
+  const [plannerState, setPlannerState] = useState(DEFAULT_PLANNER_STATE);
+  const [vaultDocs, setVaultDocs] = useState([]);
   const [aiConfig, setAiConfig] = useState({
     provider: "openrouter",
     model: "openrouter/free",
     freeModel: "openrouter/free",
   });
   const [backendHealth, setBackendHealth] = useState({
+    aiEnabled: false,
+    marketEnabled: false,
     providers: { anthropic: false, openrouter: false, openai: false },
     marketProviders: { alphaVantage: false, twelveData: false, finnhub: false },
     proxyUrl: "http://127.0.0.1:8787",
   });
+  const [userRole, setUserRole] = useState("user");
+  const isAdmin = userRole === "admin";
   const [aiChatMessages, setAiChatMessages] = useState([]);
   const [askLoading, setAskLoading] = useState(false);
   const [aiState, setAiState] = useState({
@@ -123,6 +175,12 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(toYYYYMM(new Date()));
+  const [passkeyProfiles, setPasskeyProfiles] = useState(() => getStoredPasskeys());
+  const [passkeySupported] = useState(() => isPasskeySupported());
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [pwaInstalled, setPwaInstalled] = useState(() =>
+    window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true
+  );
   const t = (key, fallback = "") => getTranslation(language, key, fallback);
   const toastTimerRef = useRef(null);
   const latestAlertsRef = useRef("");
@@ -135,6 +193,55 @@ export default function App() {
   }, [darkMode]);
 
   useEffect(() => auth.onAuthStateChanged(setUser), []);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(display-mode: standalone)");
+    const syncInstalled = () => {
+      setPwaInstalled(media?.matches || window.navigator.standalone === true);
+    };
+    const onBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+    const onInstalled = () => {
+      setInstallPromptEvent(null);
+      syncInstalled();
+      setToast({ msg: "Finwise is ready on this device.", kind: "success" });
+    };
+    syncInstalled();
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    media?.addEventListener?.("change", syncInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+      media?.removeEventListener?.("change", syncInstalled);
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const syncRole = async () => {
+      if (!user) {
+        if (!disposed) setUserRole("user");
+        return;
+      }
+      try {
+        const tokenResult = await getIdTokenResult(user, true);
+        const nextRole =
+          tokenResult?.claims?.role === "admin" || tokenResult?.claims?.admin === true
+            ? "admin"
+            : "user";
+        if (!disposed) setUserRole(nextRole);
+      } catch {
+        if (!disposed) setUserRole("user");
+      }
+    };
+    syncRole();
+    return () => {
+      disposed = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     getRedirectResult(auth).catch((e) => {
@@ -181,8 +288,12 @@ export default function App() {
 
     const loadHealth = async () => {
       try {
-        const next = await getAIBackendHealth();
-        if (!disposed) setBackendHealth(next);
+        const token = user ? await user.getIdToken() : "";
+        const next = await getAIBackendHealth(token);
+        if (!disposed) {
+          setBackendHealth(next);
+          if (user) setUserRole(next?.viewerRole === "admin" ? "admin" : "user");
+        }
       } catch {
         if (!disposed) {
           timer = window.setTimeout(loadHealth, 5000);
@@ -201,7 +312,7 @@ export default function App() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     let disposed = false;
@@ -237,8 +348,12 @@ export default function App() {
         portfolioSnapshots: safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots")), []),
         marketDisplayCurrency: localStorage.getItem(getStorageKey(uid, "market-display-currency")) || "INR",
         language: localStorage.getItem(getStorageKey(uid, "language")) || "en",
+        onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...safeJSON(localStorage.getItem(getStorageKey(uid, "onboarding")), {}) },
+        plannerState: { ...DEFAULT_PLANNER_STATE, ...safeJSON(localStorage.getItem(getStorageKey(uid, "planner-state")), {}) },
+        vaultDocs: safeJSON(localStorage.getItem(getStorageKey(uid, "vault-docs")), []),
         aiConfig: { provider: "openrouter", model: "openrouter/free", freeModel: "openrouter/free", ...safeJSON(localStorage.getItem(getStorageKey(uid, "ai-config")), {}) },
         budget: localStorage.getItem(getStorageKey(uid, "budget")) || "",
+        role: localStorage.getItem(getStorageKey(uid, "role")) || "user",
         notificationsEnabled: (() => {
           const savedNotif = localStorage.getItem(getStorageKey(uid, "notifications"));
           return savedNotif == null ? true : savedNotif === "true";
@@ -260,10 +375,14 @@ export default function App() {
       setPortfolioSnapshots(Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []);
       setMarketDisplayCurrency(data.marketDisplayCurrency || "INR");
       setLanguage(data.language || "en");
+      setOnboardingState({ ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) });
+      setPlannerState({ ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) });
+      setVaultDocs(Array.isArray(data.vaultDocs) ? data.vaultDocs : []);
       setAiConfig(data.aiConfig || localFallback.aiConfig);
       setBudget(data.budget || "");
       setBudgetInput(data.budget || "");
       setNotificationsEnabled(data.notificationsEnabled !== false);
+      setUserRole((current) => (current === "admin" ? "admin" : "user"));
 
       lastProfileSerializedRef.current = JSON.stringify({
         goals: Array.isArray(data.goals) ? data.goals : [],
@@ -273,8 +392,12 @@ export default function App() {
         portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
         marketDisplayCurrency: data.marketDisplayCurrency || "INR",
         language: data.language || "en",
+        onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
+        plannerState: { ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) },
+        vaultDocs: Array.isArray(data.vaultDocs) ? data.vaultDocs : [],
         aiConfig: data.aiConfig || localFallback.aiConfig,
         budget: data.budget || "",
+        role: data.role || "user",
         notificationsEnabled: data.notificationsEnabled !== false,
       });
       profileReadyRef.current = true;
@@ -288,8 +411,12 @@ export default function App() {
           portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
           marketDisplayCurrency: data.marketDisplayCurrency || "INR",
           language: data.language || "en",
+          onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
+          plannerState: { ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) },
+          vaultDocs: Array.isArray(data.vaultDocs) ? data.vaultDocs : [],
           aiConfig: data.aiConfig || localFallback.aiConfig,
           budget: data.budget || "",
+          role: data.role || "user",
           notificationsEnabled: data.notificationsEnabled !== false,
         });
       }
@@ -304,10 +431,14 @@ export default function App() {
     portfolioSnapshots,
     marketDisplayCurrency,
     language,
+    onboardingState,
+    plannerState,
+    vaultDocs,
     aiConfig,
     budget,
+    role: userRole,
     notificationsEnabled,
-  }), [goals, assets, liabilities, holdings, portfolioSnapshots, marketDisplayCurrency, language, aiConfig, budget, notificationsEnabled]);
+  }), [goals, assets, liabilities, holdings, portfolioSnapshots, marketDisplayCurrency, language, onboardingState, plannerState, vaultDocs, aiConfig, budget, userRole, notificationsEnabled]);
 
   useEffect(() => {
     if (!user || !profileReadyRef.current) return;
@@ -347,12 +478,28 @@ export default function App() {
   }, [language, user]);
   useEffect(() => {
     if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "onboarding"), JSON.stringify(onboardingState));
+  }, [onboardingState, user]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "planner-state"), JSON.stringify(plannerState));
+  }, [plannerState, user]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "vault-docs"), JSON.stringify(vaultDocs));
+  }, [vaultDocs, user]);
+  useEffect(() => {
+    if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "ai-config"), JSON.stringify(aiConfig));
   }, [aiConfig, user]);
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "budget"), budget);
   }, [budget, user]);
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "role"), userRole);
+  }, [userRole, user]);
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "notifications"), String(notificationsEnabled));
@@ -386,6 +533,38 @@ export default function App() {
   const handleGoogle = async () => {
     const provider = new GoogleAuthProvider();
     await signInWithProvider(provider);
+  };
+  const handleCreatePasskey = async (emailOverride) => {
+    const email = String(emailOverride || auth.currentUser?.email || "").trim().toLowerCase();
+    if (!email) throw new Error("Sign in with an email-based account before creating a passkey on this device.");
+    const next = await createLocalPasskey(email);
+    setPasskeyProfiles(next);
+    return next;
+  };
+  const handlePasskeyLogin = async (preferredEmail = "") => {
+    const match = await authenticateWithLocalPasskey(preferredEmail);
+    if (auth.currentUser?.email?.toLowerCase() === match.email) {
+      return { mode: "session", email: match.email };
+    }
+    await handleSendEmailLink(match.email);
+    return { mode: "magic-link", email: match.email };
+  };
+  const handleInstallApp = async () => {
+    if (!installPromptEvent) return false;
+    installPromptEvent.prompt();
+    const outcome = await installPromptEvent.userChoice.catch(() => null);
+    if (outcome?.outcome === "accepted") {
+      setToast({ msg: "Installing Finwise on this device...", kind: "success" });
+      setInstallPromptEvent(null);
+      return true;
+    }
+    setToast({ msg: "Install prompt dismissed.", kind: "warning" });
+    return false;
+  };
+  const handleRemovePasskey = async (email) => {
+    const next = removeLocalPasskey(email);
+    setPasskeyProfiles(next);
+    return next;
   };
   const logout = () => {
     signOut(auth);
@@ -482,6 +661,59 @@ export default function App() {
     });
   }, [user]);
 
+  const seedDemoWorkspace = useCallback(async () => {
+    if (!user || expenses.length) {
+      showToast("Demo mode is best started from a fresh account with no transactions yet.", "warning");
+      return;
+    }
+    const demoMonth = new Date();
+    demoMonth.setDate(3);
+    const shift = (days) => {
+      const copy = new Date(demoMonth);
+      copy.setDate(copy.getDate() + days);
+      return toLocalDateStr(copy);
+    };
+    const demoTransactions = [
+      { amount: 185000, type: "income", category: "Salary", note: "Monthly salary credit", date: shift(-2), recurring: true, recurringFrequency: "monthly" },
+      { amount: 42000, type: "expense", category: "Rent", note: "Home rent", date: shift(0), recurring: true, recurringFrequency: "monthly" },
+      { amount: 12000, type: "expense", category: "Food & Dining", note: "Family groceries and dining", date: shift(3), recurring: false, recurringFrequency: null },
+      { amount: 3500, type: "expense", category: "Subscriptions", note: "Netflix, ChatGPT, music", date: shift(4), recurring: true, recurringFrequency: "monthly" },
+      { amount: 18000, type: "expense", category: "EMI / Loan", note: "Car EMI", date: shift(6), recurring: true, recurringFrequency: "monthly" },
+      { amount: 15000, type: "investment", category: "Stocks — NSE/BSE", note: "SIP to equities", date: shift(8), recurring: true, recurringFrequency: "monthly" },
+      { amount: 12000, type: "investment", category: "Mutual Fund — Equity", note: "Index fund SIP", date: shift(8), recurring: true, recurringFrequency: "monthly" },
+      { amount: 1800, type: "insurance", category: "Term Life Insurance", note: "Monthly protection premium", date: shift(10), recurring: true, recurringFrequency: "monthly" },
+    ];
+    try {
+      for (const item of demoTransactions) {
+        await addDoc(collection(db, "users", user.uid, "expenses"), item);
+      }
+      setGoals([
+        { id: crypto.randomUUID(), name: "Emergency Fund", category: "Emergency Fund", targetAmount: 300000, currentAmount: 120000, targetDate: shift(180) },
+        { id: crypto.randomUUID(), name: "Annual Vacation", category: "Vacation", targetAmount: 150000, currentAmount: 45000, targetDate: shift(240) },
+      ]);
+      setAssets([{ id: crypto.randomUUID(), name: "Emergency Cash", type: "Cash", value: 120000 }]);
+      setLiabilities([{ id: crypto.randomUUID(), name: "Car Loan", type: "Loan", value: 420000 }]);
+      setVaultDocs([
+        { id: crypto.randomUUID(), title: "Health Insurance Policy", type: "Insurance", issuer: "Insurer", renewalDate: shift(45), reminderDays: 30, reference: "POL12345", note: "Renewal packet demo", attachments: [] },
+      ]);
+      setPlannerState((prev) => ({
+        ...prev,
+        monthlyHouseholdExpense: "75000",
+        currentEmergencyFund: "120000",
+        annualIncome: "2220000",
+        currentInvestableAssets: "275000",
+        monthlyGoalContribution: "35000",
+        currentInsuranceCover: "2500000",
+        totalLiabilities: "420000",
+        emiAmount: "18000",
+      }));
+      setOnboardingState((prev) => ({ ...prev, demoSeeded: true, wizardStep: 1 }));
+      showToast("Demo mode loaded. Explore the workflows with sample financial data.");
+    } catch {
+      showToast("Could not load demo mode.", "error");
+    }
+  }, [user, expenses.length, showToast]);
+
   const months = Array.from({ length: 12 }, (_, i) => {
     const d = new Date();
     d.setDate(1);
@@ -549,6 +781,21 @@ export default function App() {
   const insPieData = buildPie(recs, "insurance");
   const topCategories = expPieData.slice(0, 5);
   const recurringOutflow = recs.filter((t) => t.recurring && t.type !== "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const recurringBills = expenses.filter((t) => t.type === "expense" && t.recurring);
+  const subscriptionRows = recurringBills.filter((t) =>
+    t.category === "Subscriptions" || /netflix|spotify|prime|youtube|hotstar|chatgpt|icloud|apple|google one|canva/i.test(`${t.note || ""} ${t.category}`)
+  );
+  const subscriptionMonthly = subscriptionRows.reduce((sum, item) => sum + annualizedRecurringAmount(item.amount, item.recurringFrequency) / 12, 0);
+  const subscriptionAnnual = subscriptionRows.reduce((sum, item) => sum + annualizedRecurringAmount(item.amount, item.recurringFrequency), 0);
+  const recurringAnnual = recurringBills.reduce((sum, item) => sum + annualizedRecurringAmount(item.amount, item.recurringFrequency), 0);
+  const upcomingBills = recurringBills
+    .map((item) => {
+      const nextDate = nextRecurringDate(item.date, item.recurringFrequency, new Date());
+      return nextDate ? { ...item, nextDate } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.nextDate - b.nextDate)
+    .slice(0, 6);
 
   const monthRange12 = getMonthRange(12);
   const monthlySeries = monthRange12.map((month) => {
@@ -567,6 +814,57 @@ export default function App() {
       savings: income - expense,
     };
   });
+
+  const historicalExpenseAverage = monthlySeries.length
+    ? monthlySeries.reduce((sum, month) => sum + Number(month.expense || 0), 0) / monthlySeries.length
+    : 0;
+  const monthlyExpenseBaseline = Number(plannerState.monthlyHouseholdExpense || totals.expense || historicalExpenseAverage || 0);
+  const emergencyTarget = monthlyExpenseBaseline * Number(plannerState.emergencyFundMonths || 0);
+  const currentEmergencyFund = Number(plannerState.currentEmergencyFund || 0);
+  const emergencyGap = Math.max(emergencyTarget - currentEmergencyFund, 0);
+  const emergencyCoverageMonths = monthlyExpenseBaseline > 0 ? currentEmergencyFund / monthlyExpenseBaseline : 0;
+  const currentAge = Number(plannerState.currentAge || 0);
+  const retirementAge = Number(plannerState.retirementAge || 0);
+  const yearsToRetirement = Math.max(retirementAge - currentAge, 0);
+  const inflationRate = Number(plannerState.inflationRate || 0) / 100;
+  const expectedReturn = Number(plannerState.expectedReturn || 0) / 100;
+  const monthlyRate = expectedReturn / 12;
+  const monthsToRetirement = yearsToRetirement * 12;
+  const currentRetirementCorpus = Number(plannerState.currentRetirementCorpus || 0);
+  const monthlyRetirementContribution = Number(plannerState.monthlyRetirementContribution || 0);
+  const retirementTarget = monthlyExpenseBaseline > 0
+    ? monthlyExpenseBaseline * 12 * 25 * Math.pow(1 + inflationRate, yearsToRetirement)
+    : 0;
+  const futureCorpus = monthsToRetirement > 0
+    ? (currentRetirementCorpus * Math.pow(1 + monthlyRate, monthsToRetirement)) +
+      (monthlyRate > 0
+        ? monthlyRetirementContribution * ((Math.pow(1 + monthlyRate, monthsToRetirement) - 1) / monthlyRate)
+        : monthlyRetirementContribution * monthsToRetirement)
+    : currentRetirementCorpus;
+  const retirementGap = Math.max(retirementTarget - futureCorpus, 0);
+  const loanPrincipal = Number(plannerState.loanPrincipal || 0);
+  const loanRate = Number(plannerState.loanRate || 0) / 1200;
+  const loanRemainingMonths = Number(plannerState.loanRemainingMonths || 0);
+  const emiAmount = Number(plannerState.emiAmount || 0);
+  const suggestedEmi = loanPrincipal > 0 && loanRemainingMonths > 0
+    ? (loanRate > 0
+        ? (loanPrincipal * loanRate * Math.pow(1 + loanRate, loanRemainingMonths)) / (Math.pow(1 + loanRate, loanRemainingMonths) - 1)
+        : loanPrincipal / loanRemainingMonths)
+    : 0;
+  const emiStress = totals.income > 0 ? ((emiAmount || suggestedEmi) / totals.income) * 100 : 0;
+
+  const vaultReminderCounts = vaultDocs.reduce(
+    (acc, docItem) => {
+      if (!docItem.renewalDate) return acc;
+      const renewal = new Date(docItem.renewalDate);
+      if (Number.isNaN(renewal.getTime())) return acc;
+      const daysLeft = Math.ceil((renewal - new Date()) / (1000 * 60 * 60 * 24));
+      if (daysLeft < 0) acc.expired += 1;
+      else if (daysLeft <= Number(docItem.reminderDays || 30)) acc.dueSoon += 1;
+      return acc;
+    },
+    { dueSoon: 0, expired: 0 }
+  );
 
   const currentMonthIndex = monthRange12.indexOf(selectedMonth);
   const currentMonth = selectedMonth === "all" ? monthRange12.at(-1) : selectedMonth;
@@ -691,11 +989,15 @@ export default function App() {
     netWorth,
   });
 
+  const externalAIReady = isAdmin
+    ? Boolean(backendHealth?.providers?.[aiConfig.provider])
+    : Boolean(backendHealth?.aiEnabled);
+
   const runAIInsights = async () => {
     setAiState((s) => ({ ...s, loading: true, error: "", externalText: "", report: heuristicReport }));
     try {
       let externalText = "";
-      if (backendHealth?.providers?.[aiConfig.provider]) {
+      if (externalAIReady) {
         const response = await requestAIInsights({
           provider: aiConfig.provider,
           model: aiConfig.model,
@@ -750,7 +1052,7 @@ export default function App() {
     try {
       let answer = "";
       let mode = "local";
-      if (backendHealth?.providers?.[aiConfig.provider]) {
+      if (externalAIReady) {
         const result = await requestAIQuery({
           provider: aiConfig.provider,
           model: aiConfig.model,
@@ -829,7 +1131,15 @@ export default function App() {
     return (
       <>
         <style>{CSS}</style>
-        <LoginPage onLogin={handleLogin} onSignup={handleSignup} onGoogle={handleGoogle} onSendEmailLink={handleSendEmailLink} />
+        <LoginPage
+          onLogin={handleLogin}
+          onSignup={handleSignup}
+          onGoogle={handleGoogle}
+          onSendEmailLink={handleSendEmailLink}
+          onPasskeyLogin={handlePasskeyLogin}
+          passkeyProfiles={passkeyProfiles}
+          passkeySupported={passkeySupported}
+        />
       </>
     );
   }
@@ -840,6 +1150,8 @@ export default function App() {
     { id: "analytics", icon: "📊", label: t("nav.analytics", "Analytics") },
     { id: "goals", icon: "◎", label: t("nav.goals", "Goals") },
     { id: "wealth", icon: "⬢", label: t("nav.wealth", "Net Worth") },
+    { id: "timeline", icon: "◷", label: "Timeline" },
+    { id: "vault", icon: "🗂", label: "Vault" },
     { id: "add", icon: "＋", label: t("nav.add", "Add") },
     { id: "history", icon: "≡", label: t("nav.history", "History") },
     { id: "import", icon: "⬆", label: t("nav.import", "Import") },
@@ -858,6 +1170,8 @@ export default function App() {
   const MOBILE_MORE_ITEMS = [
     { id: "analytics", icon: "📊", label: t("nav.analytics", "Analytics") },
     { id: "wealth", icon: "⬢", label: t("nav.wealth", "Net Worth") },
+    { id: "timeline", icon: "◷", label: "Timeline" },
+    { id: "vault", icon: "🗂", label: "Vault" },
     { id: "import", icon: "⬆", label: t("nav.import", "Import") },
     { id: "settings", icon: "⚙", label: t("nav.settings", "Settings") },
   ];
@@ -893,10 +1207,37 @@ export default function App() {
           totalTransactions={expenses.length}
           assetCount={assets.length + holdings.length}
           liabilityCount={liabilities.length}
+          onboardingState={onboardingState}
+          setOnboardingState={setOnboardingState}
+          plannerSummary={{
+            emergencyTarget,
+            emergencyGap,
+            emergencyCoverageMonths,
+            retirementTarget,
+            retirementGap,
+            futureCorpus,
+            emiAmount: emiAmount || suggestedEmi,
+            emiStress,
+          }}
+          subscriptionSummary={{
+            monthly: subscriptionMonthly,
+            annual: subscriptionAnnual,
+            recurringAnnual,
+            recurringCount: recurringBills.length,
+            subscriptionCount: subscriptionRows.length,
+            upcomingBills,
+          }}
+          vaultSummary={{
+            totalDocs: vaultDocs.length,
+            dueSoon: vaultReminderCounts.dueSoon,
+            expired: vaultReminderCounts.expired,
+          }}
+          onLoadDemo={seedDemoWorkspace}
           onJumpToAdd={() => setActiveTab("add")}
           onJumpToImport={() => setActiveTab("import")}
           onJumpToGoals={() => setActiveTab("goals")}
           onJumpToNetWorth={() => setActiveTab("wealth")}
+          onJumpToVault={() => setActiveTab("vault")}
         />
       );
     }
@@ -908,6 +1249,7 @@ export default function App() {
           onGenerate={runAIInsights}
           aiConfig={aiConfig}
           backendHealth={backendHealth}
+          isAdmin={isAdmin}
           topCategories={topCategories}
           unusualTransactions={unusualTransactions}
           totals={totals}
@@ -930,7 +1272,28 @@ export default function App() {
         />
       );
     }
-    if (activeTab === "goals") return <GoalsTargets goals={goals} setGoals={setGoals} />;
+    if (activeTab === "goals") {
+      return (
+        <GoalsTargets
+          goals={goals}
+          setGoals={setGoals}
+          plannerState={plannerState}
+          setPlannerState={setPlannerState}
+          totals={totals}
+          plannerSummary={{
+            emergencyTarget,
+            emergencyGap,
+            emergencyCoverageMonths,
+            retirementTarget,
+            retirementGap,
+            futureCorpus,
+            yearsToRetirement,
+            suggestedEmi,
+            emiStress,
+          }}
+        />
+      );
+    }
     if (activeTab === "wealth") {
       return (
         <NetWorthTracker
@@ -949,7 +1312,31 @@ export default function App() {
           marketDisplayCurrency={marketDisplayCurrency}
           setMarketDisplayCurrency={setMarketDisplayCurrency}
           marketFx={marketFx}
+          portfolioInvestedValue={portfolioInvestedValue}
+          portfolioGainLoss={portfolioGainLoss}
+          investmentTransactions={expenses.filter((item) => item.type === "investment")}
           showToast={showToast}
+        />
+      );
+    }
+    if (activeTab === "vault") {
+      return (
+        <DocumentsVault
+          docs={vaultDocs}
+          setDocs={setVaultDocs}
+          showToast={showToast}
+          user={user}
+        />
+      );
+    }
+    if (activeTab === "timeline") {
+      return (
+        <TimelineView
+          recurringBills={recurringBills}
+          goals={goals}
+          vaultDocs={vaultDocs}
+          holdings={holdings}
+          plannerSummary={{ emiAmount: emiAmount || suggestedEmi }}
         />
       );
     }
@@ -1017,11 +1404,20 @@ export default function App() {
           notificationsEnabled={notificationsEnabled}
           setNotificationsEnabled={setNotificationsEnabled}
           backendHealth={backendHealth}
+          isAdmin={isAdmin}
+          userRole={userRole}
           onSendVerificationEmail={handleSendVerificationEmail}
           onSendPasswordReset={handleSendPasswordReset}
           onChangeEmail={handleChangeEmail}
           language={language}
           setLanguage={setLanguage}
+          passkeySupported={passkeySupported}
+          passkeyProfiles={passkeyProfiles}
+          onCreatePasskey={handleCreatePasskey}
+          onRemovePasskey={handleRemovePasskey}
+          pwaInstalled={pwaInstalled}
+          pwaInstallReady={Boolean(installPromptEvent)}
+          onInstallApp={handleInstallApp}
         />
       );
     }
@@ -1115,6 +1511,27 @@ export default function App() {
                     <span>{item.label}</span>
                   </button>
                 ))}
+              </div>
+              <div className="mobile-account-card">
+                <div className="user-row" style={{ padding: 0, marginBottom: 0 }}>
+                  <div className="user-avatar">{(user?.email || user?.phoneNumber || "U")[0].toUpperCase()}</div>
+                  <div className="user-email" style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "unset" }}>
+                    {user?.email || user?.phoneNumber}
+                  </div>
+                </div>
+                <div className="mobile-account-actions">
+                  <div className="theme-row" style={{ margin: 0, flex: 1 }} onClick={() => setDarkMode((v) => !v)}>
+                    <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text2)" }}>
+                      {darkMode ? t("theme.dark", "Dark theme") : t("theme.light", "Light theme")}
+                    </span>
+                    <div className={`tt-track ${darkMode ? "on" : ""}`}>
+                      <div className="tt-thumb" />
+                    </div>
+                  </div>
+                  <button className="logout-btn" style={{ width: "auto", minWidth: 120 }} onClick={logout}>
+                    {t("auth.signout", "Sign Out")}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

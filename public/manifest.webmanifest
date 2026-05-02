@@ -1,0 +1,25 @@
+{
+  "name": "Finwise",
+  "short_name": "Finwise",
+  "description": "Premium personal finance command center for income, expenses, goals, net worth, AI insights, and market tracking.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F4F1EC",
+  "theme_color": "#A07840",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

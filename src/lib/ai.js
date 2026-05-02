@@ -61,8 +61,9 @@ export const buildHeuristicReport = ({
   };
 };
 
-export async function getAIBackendHealth() {
-  const res = await fetch("/api/ai/health");
+export async function getAIBackendHealth(token = "") {
+  const headers = token ? { authorization: `Bearer ${token}` } : {};
+  const res = await fetch("/api/ai/health", { headers });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || "Could not load AI backend status");
   return data;

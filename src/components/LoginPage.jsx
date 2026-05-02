@@ -21,7 +21,15 @@ function rememberEmailAddress(email) {
   window.localStorage.setItem(EMAIL_MEMORY_KEY, JSON.stringify(next));
 }
 
-export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink }) {
+export default function LoginPage({
+  onLogin,
+  onSignup,
+  onGoogle,
+  onSendEmailLink,
+  onPasskeyLogin,
+  passkeyProfiles = [],
+  passkeySupported = false,
+}) {
   const { t } = useI18n();
   const [authTab, setAuthTab] = useState("email");
   const [signTab, setSignTab] = useState("signin");
@@ -37,6 +45,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
   const [sentLinkEmail, setSentLinkEmail] = useState("");
   const [rememberedEmails, setRememberedEmails] = useState(() => readRememberedEmails());
   const [showSavedEmails, setShowSavedEmails] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
 
   const getError = (e, fallback) => e?.message?.replace("Firebase: ", "") || fallback;
 
@@ -91,12 +100,40 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
   };
 
   const knownEmails = rememberedEmails.filter(Boolean);
+  const passkeyEmails = passkeyProfiles.map((item) => item.email).filter(Boolean);
+  const preferredPasskeyEmail = magicEmail || email || passkeyEmails[0] || "";
 
   const pickEmail = (value) => {
     setEmail(value);
     setMagicEmail(value);
     setResetEmail(value);
     setShowSavedEmails(false);
+  };
+
+  const handlePasskey = async () => {
+    if (!onPasskeyLogin) return;
+    setErr("");
+    setOk("");
+    setPasskeyLoading(true);
+    try {
+      const result = await onPasskeyLogin(preferredPasskeyEmail);
+      if (result?.email) {
+        pickEmail(result.email);
+      }
+      if (result?.mode === "session") {
+        setOk(`Passkey accepted for ${result.email}. Welcome back.`);
+      } else if (result?.mode === "magic-link") {
+        setSentLinkEmail(result.email);
+        setAuthTab("email-link");
+        setOk(`Passkey confirmed. A sign-in link was sent to ${result.email}.`);
+      } else {
+        setOk("Passkey accepted.");
+      }
+    } catch (e) {
+      setErr(getError(e, "Could not continue with passkey."));
+    } finally {
+      setPasskeyLoading(false);
+    }
   };
 
   if (forgot) {
@@ -141,6 +178,30 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
       <div className="login-card">
         <div className="login-logo">◈ Finwise</div>
         <div className="login-tagline">{t("login.tagline", "Premium personal finance command center")}</div>
+        <div className="login-quick-panel">
+          <div className="login-quick-copy">
+            <strong>{t("login.quickTitle", "Mobile-friendly sign in")}</strong>
+            <p>{t("login.quickBody", "Use a passkey on this device, a magic link in your inbox, or Google when you want the fastest path back in.")}</p>
+          </div>
+          <div className="login-quick-actions">
+            {passkeySupported && passkeyProfiles.length ? (
+              <button className="btn-secondary login-quick-btn" onClick={handlePasskey} disabled={passkeyLoading}>
+                {passkeyLoading ? t("login.passkeyWorking", "Checking passkey...") : t("login.passkey", "Continue with Passkey")}
+              </button>
+            ) : null}
+            <button className="google-btn login-quick-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
+          </div>
+          {!passkeySupported ? (
+            <div className="login-passkey-note">
+              {t("login.passkeyLocalNote", "Passkeys are best enabled on the secure deployed app. For local use, continue with Google, email, or magic link.")}
+            </div>
+          ) : null}
+          {passkeySupported && !passkeyProfiles.length ? (
+            <div className="login-passkey-note">
+              {t("login.passkeySetupNote", "After your first sign-in, you can add a passkey from Settings for one-touch device unlock.")}
+            </div>
+          ) : null}
+        </div>
         <div className="tab2">
           <button className={`tab2-btn ${authTab === "email" ? "active" : ""}`} onClick={() => setAuthTab("email")}>{t("login.email", "Email")}</button>
           <button className={`tab2-btn ${authTab === "email-link" ? "active" : ""}`} onClick={() => setAuthTab("email-link")}>{t("login.magic", "Magic Link")}</button>
@@ -194,7 +255,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
                           pickEmail(item);
                         }}
                       >
-                        {item}
+                        <span style={{ overflowWrap: "anywhere" }}>{item}</span>
                       </button>
                     ))}
                   </div>
@@ -217,8 +278,6 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
             <button className="btn-primary" onClick={handleEmail} disabled={loading}>
               {loading ? "Please wait..." : signTab === "signin" ? t("login.signin", "Sign In") : t("login.signup", "Sign Up")}
             </button>
-            <div className="divider">or</div>
-            <button className="google-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
           </>
         ) : (
           <>
@@ -268,7 +327,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
                           pickEmail(item);
                         }}
                       >
-                        {item}
+                        <span style={{ overflowWrap: "anywhere" }}>{item}</span>
                       </button>
                     ))}
                   </div>
@@ -283,6 +342,7 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
             </button>
             {sentLinkEmail && (
               <div className="magic-checklist">
+                <div className="magic-link-badge">{t("login.mobileReady", "Best on mobile")}</div>
                 <div className="magic-check-item">
                   <span className="magic-check-dot" />
                   {t("login.sentTo", "Sent to")} <strong>{sentLinkEmail}</strong>
@@ -297,8 +357,6 @@ export default function LoginPage({ onLogin, onSignup, onGoogle, onSendEmailLink
                 </div>
               </div>
             )}
-            <div className="divider">or</div>
-            <button className="google-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
           </>
         )}
       </div>

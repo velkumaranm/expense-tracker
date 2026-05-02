@@ -13,6 +13,11 @@ const emptyForm = {
   units: "",
   costPerUnit: "",
   account: "",
+  acquiredOn: "",
+  sector: "",
+  monthlyContribution: "",
+  targetWeight: "",
+  realizedGain: "",
 };
 
 function normalizeHoldingError(message) {
@@ -276,6 +281,11 @@ export default function PortfolioHoldings({
       units: String(item.units ?? ""),
       costPerUnit: String(item.costPerUnit ?? ""),
       account: item.account || "",
+      acquiredOn: item.acquiredOn || "",
+      sector: item.sector || "",
+      monthlyContribution: String(item.monthlyContribution ?? ""),
+      targetWeight: String(item.targetWeight ?? ""),
+      realizedGain: String(item.realizedGain ?? ""),
     });
     setSearchState({ query: "", loading: false, error: "", results: [] });
   };
@@ -312,6 +322,11 @@ export default function PortfolioHoldings({
       units: Number(form.units),
       costPerUnit: Number(form.costPerUnit),
       account: form.account.trim(),
+      acquiredOn: form.acquiredOn || new Date().toISOString().slice(0, 10),
+      sector: form.sector.trim(),
+      monthlyContribution: Number(form.monthlyContribution || 0),
+      targetWeight: Number(form.targetWeight || 0),
+      realizedGain: Number(form.realizedGain || 0),
       investedValue: Number(form.units) * Number(form.costPerUnit),
     };
 
@@ -342,6 +357,7 @@ export default function PortfolioHoldings({
           refreshError: "",
           priceLabel: "",
           source: "",
+          acquiredOn: normalized.acquiredOn,
         },
         ...prev,
       ]);
@@ -440,17 +456,17 @@ export default function PortfolioHoldings({
 
       <div className="mini-grid" style={{ marginBottom: 14 }}>
         <div className="mini-card">
-          <div className="k">Invested Value</div>
+          <div className="k">{t("market.investedValue", "Invested Value")}</div>
           <div className="v">{marketDisplayCurrency === "BOTH" ? `${fmtMoney(summary.totalInvested, "INR")} (${fmtMoney(convertAmount(summary.totalInvested, "INR", "USD", marketFx), "USD")})` : fmtMoney(summary.totalInvested, marketDisplayCurrency)}</div>
           <div className="muted">Units multiplied by your average cost per unit.</div>
         </div>
         <div className="mini-card">
-          <div className="k">Current Value</div>
+          <div className="k">{t("market.currentValue", "Current Value")}</div>
           <div className="v" style={{ color: "var(--invest)" }}>{marketDisplayCurrency === "BOTH" ? `${fmtMoney(summary.totalValue, "INR")} (${fmtMoney(convertAmount(summary.totalValue, "INR", "USD", marketFx), "USD")})` : fmtMoney(summary.totalValue, marketDisplayCurrency)}</div>
           <div className="muted">Latest fetched market value from the current holdings set.</div>
         </div>
         <div className="mini-card">
-          <div className="k">Unrealized P&L</div>
+          <div className="k">{t("market.unrealized", "Unrealized P&L")}</div>
           <div className="v" style={{ color: summary.gainLoss >= 0 ? "var(--income)" : "var(--expense)" }}>
             {summary.gainLoss >= 0 ? "+" : "-"}{marketDisplayCurrency === "BOTH" ? `${fmtMoney(Math.abs(summary.gainLoss), "INR")} (${fmtMoney(convertAmount(Math.abs(summary.gainLoss), "INR", "USD", marketFx), "USD")})` : fmtMoney(Math.abs(summary.gainLoss), marketDisplayCurrency)}
           </div>
@@ -548,6 +564,26 @@ export default function PortfolioHoldings({
                 <label className="fl">{t("market.account", "Account / Broker")}</label>
                 <input className="fi" value={form.account} onChange={(e) => setForm((prev) => ({ ...prev, account: e.target.value }))} placeholder="Zerodha, Groww, Folio..." />
               </div>
+              <div className="fg">
+                <label className="fl">Acquired On</label>
+                <input className="fi" type="date" value={form.acquiredOn} onChange={(e) => setForm((prev) => ({ ...prev, acquiredOn: e.target.value }))} />
+              </div>
+              <div className="fg">
+                <label className="fl">Sector / Theme</label>
+                <input className="fi" value={form.sector} onChange={(e) => setForm((prev) => ({ ...prev, sector: e.target.value }))} placeholder="IT, Banking, Energy, ETF..." />
+              </div>
+              <div className="fg">
+                <label className="fl">Monthly SIP / Contribution</label>
+                <input className="fi" type="number" value={form.monthlyContribution} onChange={(e) => setForm((prev) => ({ ...prev, monthlyContribution: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="fg">
+                <label className="fl">Target Weight %</label>
+                <input className="fi" type="number" value={form.targetWeight} onChange={(e) => setForm((prev) => ({ ...prev, targetWeight: e.target.value }))} placeholder="20" />
+              </div>
+              <div className="fg">
+                <label className="fl">Realized Gain</label>
+                <input className="fi" type="number" value={form.realizedGain} onChange={(e) => setForm((prev) => ({ ...prev, realizedGain: e.target.value }))} placeholder="0" />
+              </div>
               <div className="fg full">
                 <div className="setting-row" style={{ alignItems: "stretch" }}>
                   <button className="btn-primary" onClick={saveHolding}>
@@ -614,6 +650,7 @@ export default function PortfolioHoldings({
                   {item.source ? ` • ${item.source}` : ""}
                   {item.priceDate ? ` • ${item.priceLabel || "Latest"} ${item.priceDate}` : ""}
                 </div>
+                {item.sector ? <div className="muted" style={{ marginTop: 4 }}>{item.sector}</div> : null}
               </div>
               <div className="portfolio-figures">
                 <div className="portfolio-number">{formatHoldingAmount(Number(item.currentValue || item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</div>
@@ -646,6 +683,15 @@ export default function PortfolioHoldings({
                       ? t("common.updated", "Updated")
                       : t("common.pending", "Pending")}
                 </strong>
+              </div>
+              <div className="mini-stat">
+                <span>SIP / Realized</span>
+                <strong>{Number(item.monthlyContribution || 0) > 0 ? formatHoldingPrice(Number(item.monthlyContribution || 0), item) : "—"}</strong>
+                <div className="muted" style={{ marginTop: 4 }}>
+                  {Number(item.realizedGain || 0)
+                    ? `Realized ${formatHoldingPrice(Number(item.realizedGain || 0), item)}`
+                    : "No realized-gain note yet."}
+                </div>
               </div>
               <div className="portfolio-actions">
                 <div className="setting-row" style={{ justifyContent: "flex-end" }}>

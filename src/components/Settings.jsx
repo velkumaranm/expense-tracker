@@ -15,15 +15,25 @@ export default function Settings({
   notificationsEnabled,
   setNotificationsEnabled,
   backendHealth,
+  isAdmin,
+  userRole,
   onSendVerificationEmail,
   onSendPasswordReset,
   onChangeEmail,
   language,
   setLanguage,
+  passkeySupported,
+  passkeyProfiles,
+  onCreatePasskey,
+  onRemovePasskey,
+  pwaInstalled,
+  pwaInstallReady,
+  onInstallApp,
 }) {
   const { t } = useI18n();
   const [nextEmail, setNextEmail] = useState(user?.email || "");
   const [accountState, setAccountState] = useState({ loading: "", error: "", ok: "" });
+  const [passkeyBusy, setPasskeyBusy] = useState("");
 
   const runAccountAction = async (loadingKey, action, successMessage) => {
     setAccountState({ loading: loadingKey, error: "", ok: "" });
@@ -36,6 +46,23 @@ export default function Settings({
         error: e?.message?.replace("Firebase: ", "") || "Request failed.",
         ok: "",
       });
+    }
+  };
+
+  const runPasskeyAction = async (key, action, successMessage) => {
+    setPasskeyBusy(key);
+    setAccountState((state) => ({ ...state, error: "", ok: "" }));
+    try {
+      await action();
+      setAccountState((state) => ({ ...state, ok: successMessage }));
+    } catch (e) {
+      setAccountState((state) => ({
+        ...state,
+        error: e?.message?.replace("Firebase: ", "") || "Passkey action failed.",
+        ok: "",
+      }));
+    } finally {
+      setPasskeyBusy("");
     }
   };
 
@@ -74,6 +101,25 @@ export default function Settings({
       </div>
 
       <div className="settings-section">
+        <h3>Install App</h3>
+        <p>
+          Add Finwise to your home screen or desktop for a cleaner app-like experience, faster relaunch, and offline-ready shell caching.
+        </p>
+        <div className="setting-row" style={{ alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+          <div className="muted" style={{ flex: 1, minWidth: 0 }}>
+            {pwaInstalled
+              ? "Finwise is already installed on this device."
+              : pwaInstallReady
+                ? "This device is ready to install Finwise."
+                : "If the install button is unavailable, open Finwise in the deployed Vercel app and use your browser's Add to Home Screen / Install App action."}
+          </div>
+          <button className="btn-save" disabled={!pwaInstallReady || pwaInstalled} onClick={onInstallApp}>
+            {pwaInstalled ? "Installed" : pwaInstallReady ? "Install Finwise" : "Install unavailable"}
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-section">
         <h3>{t("settings.budget", "Monthly Budget")}</h3>
         <p>Budget warnings are used by the dashboard and smart notifications system.</p>
         <div className="setting-row">
@@ -96,66 +142,70 @@ export default function Settings({
         </div>
       </div>
 
-      <div className="settings-section">
-        <h3>{t("settings.ai", "AI Proxy Configuration")}</h3>
-        <p>
-          Provider keys now live only on the backend proxy. OpenRouter free is the default recommendation for everyday use, while OpenAI and Anthropic are available if you want premium models.
-        </p>
-        <div className="form-grid">
-          <div className="fg">
-            <label className="fl">Provider</label>
-            <select className="fs" value={aiConfig.provider} onChange={(e) => setAiConfig((s) => ({ ...s, provider: e.target.value }))}>
-              <option value="openrouter">OpenRouter Free Model</option>
-              <option value="anthropic">Anthropic Claude</option>
-              <option value="openai">OpenAI</option>
-            </select>
+      {isAdmin && (
+        <>
+          <div className="settings-section">
+            <h3>{t("settings.ai", "AI Proxy Configuration")}</h3>
+            <p>
+              Provider keys live on the backend proxy. This section is only shown to admin users because it controls operator-level model behavior.
+            </p>
+            <div className="form-grid">
+              <div className="fg">
+                <label className="fl">Provider</label>
+                <select className="fs" value={aiConfig.provider} onChange={(e) => setAiConfig((s) => ({ ...s, provider: e.target.value }))}>
+                  <option value="openrouter">OpenRouter Free Model</option>
+                  <option value="anthropic">Anthropic Claude</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </div>
+              <div className="fg">
+                <label className="fl">Model</label>
+                <input
+                  className="fi"
+                  placeholder={
+                    aiConfig.provider === "openrouter"
+                      ? "openrouter/free"
+                      : aiConfig.provider === "openai"
+                        ? "gpt-4.1-mini"
+                        : "claude-3-5-haiku-latest"
+                  }
+                  value={aiConfig.model}
+                  onChange={(e) => setAiConfig((s) => ({ ...s, model: e.target.value }))}
+                />
+              </div>
+              <div className="fg full">
+                <label className="fl">Free Model</label>
+                <input className="fi" placeholder="openrouter/free" value={aiConfig.freeModel} onChange={(e) => setAiConfig((s) => ({ ...s, freeModel: e.target.value }))} />
+              </div>
+            </div>
+            <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
+              Anthropic key: <strong style={{ color: backendHealth?.providers?.anthropic ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.anthropic ? "configured" : "missing"}</strong><br />
+              OpenAI key: <strong style={{ color: backendHealth?.providers?.openai ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.openai ? "configured" : "missing"}</strong><br />
+              OpenRouter key: <strong style={{ color: backendHealth?.providers?.openrouter ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.openrouter ? "configured" : "missing"}</strong><br />
+              Proxy URL: <strong style={{ color: "var(--text)" }}>{backendHealth?.proxyUrl || "http://127.0.0.1:8787"}</strong>
+            </div>
+            {backendHealth?.warnings?.likelyOpenAIKeyStoredAsOpenRouter && (
+              <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--accent)", lineHeight: 1.6 }}>
+                It looks like an OpenAI-style key may be stored under <code>OPENROUTER_API_KEY</code>. Move it to <code>OPENAI_API_KEY</code> for the cleanest setup.
+              </div>
+            )}
           </div>
-          <div className="fg">
-            <label className="fl">Model</label>
-            <input
-              className="fi"
-              placeholder={
-                aiConfig.provider === "openrouter"
-                  ? "openrouter/free"
-                  : aiConfig.provider === "openai"
-                    ? "gpt-4.1-mini"
-                    : "claude-3-5-haiku-latest"
-              }
-              value={aiConfig.model}
-              onChange={(e) => setAiConfig((s) => ({ ...s, model: e.target.value }))}
-            />
-          </div>
-          <div className="fg full">
-            <label className="fl">Free Model</label>
-            <input className="fi" placeholder="openrouter/free" value={aiConfig.freeModel} onChange={(e) => setAiConfig((s) => ({ ...s, freeModel: e.target.value }))} />
-          </div>
-        </div>
-        <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
-          Anthropic key: <strong style={{ color: backendHealth?.providers?.anthropic ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.anthropic ? "configured" : "missing"}</strong><br />
-          OpenAI key: <strong style={{ color: backendHealth?.providers?.openai ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.openai ? "configured" : "missing"}</strong><br />
-          OpenRouter key: <strong style={{ color: backendHealth?.providers?.openrouter ? "var(--income)" : "var(--expense)" }}>{backendHealth?.providers?.openrouter ? "configured" : "missing"}</strong><br />
-          Proxy URL: <strong style={{ color: "var(--text)" }}>{backendHealth?.proxyUrl || "http://127.0.0.1:8787"}</strong>
-        </div>
-        {backendHealth?.warnings?.likelyOpenAIKeyStoredAsOpenRouter && (
-          <div style={{ marginTop: 12, fontSize: 11.5, color: "var(--accent)", lineHeight: 1.6 }}>
-            It looks like an OpenAI-style key may be stored under <code>OPENROUTER_API_KEY</code>. Move it to <code>OPENAI_API_KEY</code> for the cleanest setup.
-          </div>
-        )}
-      </div>
 
-      <div className="settings-section">
-        <h3>{t("settings.market", "Market Data")}</h3>
-        <p>
-          Finwise now uses a fallback ladder for market refresh: Twelve Data first where it has the strongest free allowance, then Finnhub, then Alpha Vantage. Mutual funds still use a free AMFI-backed NAV feed.
-        </p>
-        <div style={{ fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
-          Twelve Data key: <strong style={{ color: backendHealth?.marketProviders?.twelveData ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.twelveData ? "configured" : "missing"}</strong><br />
-          Finnhub key: <strong style={{ color: backendHealth?.marketProviders?.finnhub ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.finnhub ? "configured" : "missing"}</strong><br />
-          Alpha Vantage key: <strong style={{ color: backendHealth?.marketProviders?.alphaVantage ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.alphaVantage ? "configured" : "missing"}</strong><br />
-          Mutual fund NAV feed: <strong style={{ color: "var(--income)" }}>available</strong><br />
-          Refresh model: <strong style={{ color: "var(--text)" }}>manual, daily-friendly, fallback-aware</strong>
-        </div>
-      </div>
+          <div className="settings-section">
+            <h3>{t("settings.market", "Market Data")}</h3>
+            <p>
+              Finwise uses a fallback ladder for market refresh: Twelve Data first where it has the strongest free allowance, then Finnhub, then Alpha Vantage. Mutual funds still use a free AMFI-backed NAV feed.
+            </p>
+            <div style={{ fontSize: 11.5, color: "var(--text3)", lineHeight: 1.7 }}>
+              Twelve Data key: <strong style={{ color: backendHealth?.marketProviders?.twelveData ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.twelveData ? "configured" : "missing"}</strong><br />
+              Finnhub key: <strong style={{ color: backendHealth?.marketProviders?.finnhub ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.finnhub ? "configured" : "missing"}</strong><br />
+              Alpha Vantage key: <strong style={{ color: backendHealth?.marketProviders?.alphaVantage ? "var(--income)" : "var(--expense)" }}>{backendHealth?.marketProviders?.alphaVantage ? "configured" : "missing"}</strong><br />
+              Mutual fund NAV feed: <strong style={{ color: "var(--income)" }}>available</strong><br />
+              Refresh model: <strong style={{ color: "var(--text)" }}>manual, daily-friendly, fallback-aware</strong>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="settings-section">
         <h3>{t("settings.account", "Account")}</h3>
@@ -167,11 +217,74 @@ export default function Settings({
             {user?.emailVerified ? "Email verified" : "Email not verified"}
           </span>
           <span className="status-pill neutral">{user?.providerData?.map((p) => p.providerId.replace(".com", "")).join(", ") || "password"}</span>
+          <span className={`status-pill ${isAdmin ? "verified" : "neutral"}`}>{isAdmin ? "Admin" : userRole || "User"}</span>
         </div>
+        {!isAdmin && user?.email && (
+          <div className="auth-ok" style={{ marginTop: 14, marginBottom: 0 }}>
+            To grant this account admin access, add <strong>{user.email}</strong> to <code>FINWISE_ADMIN_EMAILS</code> on the backend or assign the Firebase auth claim <code>role=admin</code>.
+          </div>
+        )}
         {accountState.error && <div className="auth-error" style={{ marginTop: 14, marginBottom: 0 }}>{accountState.error}</div>}
         {accountState.ok && <div className="auth-ok" style={{ marginTop: 14, marginBottom: 0 }}>{accountState.ok}</div>}
 
         <div className="account-grid">
+          <div className="account-card account-card-wide">
+            <strong>Passkey quick sign-in</strong>
+            <p>
+              Add a passkey on this device to unlock Finwise faster on mobile and desktop. If your Firebase session is gone, Finwise will verify the device and send a magic link to the matched email.
+            </p>
+            {!passkeySupported ? (
+              <div className="auth-error" style={{ marginTop: 12, marginBottom: 0 }}>
+                This browser or device does not currently support passkeys in a secure context.
+              </div>
+            ) : (
+              <>
+                <div className="setting-row" style={{ alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <button
+                    className="btn-save"
+                    disabled={passkeyBusy === "create"}
+                    onClick={() =>
+                      runPasskeyAction(
+                        "create",
+                        () => onCreatePasskey(user?.email),
+                        `Passkey added for ${user?.email || "this account"}.`
+                      )
+                    }
+                  >
+                    {passkeyBusy === "create" ? "Creating..." : "Add passkey to this device"}
+                  </button>
+                </div>
+                {passkeyProfiles?.length ? (
+                  <div className="passkey-list">
+                    {passkeyProfiles.map((item) => (
+                      <div key={item.credentialId} className="passkey-row">
+                        <div>
+                          <strong>{item.email}</strong>
+                          <div className="muted" style={{ fontSize: 12 }}>Saved on this device</div>
+                        </div>
+                        <button
+                          className="btn-secondary"
+                          disabled={passkeyBusy === item.email}
+                          onClick={() =>
+                            runPasskeyAction(
+                              item.email,
+                              () => onRemovePasskey(item.email),
+                              `Passkey removed for ${item.email}.`
+                            )
+                          }
+                        >
+                          {passkeyBusy === item.email ? "Removing..." : "Remove"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="muted" style={{ marginTop: 12 }}>No device passkeys saved yet.</div>
+                )}
+              </>
+            )}
+          </div>
+
           <div className="account-card">
             <strong>Email verification</strong>
             <p>Send a verification email so your account is trusted for security-sensitive changes.</p>

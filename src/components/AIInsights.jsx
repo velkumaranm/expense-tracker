@@ -2,12 +2,53 @@ import { useState } from "react";
 import { fmtINR } from "../lib/utils";
 import { useI18n } from "../lib/i18n";
 
+function parseModelSections(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const lines = raw
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\*\*/g, "").replace(/#+\s*/g, "").trim())
+    .filter(Boolean)
+    .filter((line) => !/^personal finance analysis/i.test(line))
+    .filter((line) => !/^here'?s an analysis/i.test(line));
+
+  const sections = [];
+  let current = { title: "Summary", items: [] };
+
+  const pushCurrent = () => {
+    if (current.items.length) sections.push(current);
+  };
+
+  for (const line of lines) {
+    if (/^[|].*[|]$/.test(line) || /^[-|:\s]+$/.test(line)) continue;
+    if (/^(overview|risks?|opportunities|recommendations|cash flow|balance sheet|commitments|watch|next steps?)[:\-]?$/i.test(line)) {
+      pushCurrent();
+      current = { title: line.replace(/[:\-]+$/, "").trim(), items: [] };
+      continue;
+    }
+    const cleaned = line.replace(/^[-*•]\s*/, "").replace(/\|/g, " ").replace(/\s+/g, " ").trim();
+    if (cleaned.length < 3) continue;
+    if (/^(item|amount|comment)$/i.test(cleaned)) continue;
+    current.items.push(cleaned);
+  }
+
+  pushCurrent();
+  return sections
+    .map((section) => ({
+      title: section.title,
+      items: section.items,
+    }))
+    .filter((section) => section.items.length);
+}
+
 export default function AIInsights({
   report,
   aiState,
   onGenerate,
   aiConfig,
   backendHealth,
+  isAdmin,
   topCategories,
   unusualTransactions,
   totals,
@@ -18,7 +59,10 @@ export default function AIInsights({
 }) {
   const { t } = useI18n();
   const [question, setQuestion] = useState("");
-  const modeLabel = backendHealth?.providers?.[aiConfig.provider]
+  const externalAIReady = isAdmin
+    ? backendHealth?.providers?.[aiConfig.provider]
+    : backendHealth?.aiEnabled;
+  const modeLabel = isAdmin && backendHealth?.providers?.[aiConfig.provider]
     ? aiConfig.provider === "anthropic"
       ? "Claude Proxy"
       : aiConfig.provider === "openai"
@@ -31,6 +75,7 @@ export default function AIInsights({
     totals.income > 0 ? "Based on my current income, how much should go to spending, investing, and emergency reserves?" : "",
     "What are the next three actions that would improve my finances this month?",
   ].filter(Boolean);
+  const modelSections = parseModelSections(aiState.externalText);
 
   return (
     <>
@@ -120,14 +165,16 @@ export default function AIInsights({
                       {askLoading ? "Thinking…" : t("ai.ask", "Ask")}
                     </button>
                     <span className="muted">
-                      {backendHealth?.providers?.[aiConfig.provider]
+                      {externalAIReady
                         ? `Using secured backend AI via ${modeLabel}.`
                         : "Using local reasoning because no AI provider key is configured."}
                     </span>
                   </div>
-                  {!backendHealth?.providers?.[aiConfig.provider] && (
+                  {!externalAIReady && (
                     <p style={{ fontSize: 11.5, color: "var(--accent)", marginTop: 6 }}>
-                      Current provider <strong>{aiConfig.provider}</strong> is not configured on the backend proxy yet.
+                      {isAdmin
+                        ? <>Current provider <strong>{aiConfig.provider}</strong> is not configured on the backend proxy yet.</>
+                        : "Backend AI is unavailable right now, so Finwise is using local reasoning."}
                     </p>
                   )}
                 </div>
@@ -150,16 +197,28 @@ export default function AIInsights({
                 </div>
               </div>
 
-              {!!aiState.externalText && (
-                <div className="section-card">
-                  <h3>{t("ai.modelNotes", "Model Notes")}</h3>
-                  <p style={{ whiteSpace: "pre-wrap" }}>{aiState.externalText}</p>
-                </div>
-              )}
             </div>
           </div>
 
           <div className="ai-insights-grid">
+            {!!modelSections.length && (
+              <div className="section-card ai-takeaways-card">
+                <h3>{t("ai.keyTakeaways", "Key Takeaways")}</h3>
+                <div className="takeaway-stack">
+                  {modelSections.map((section) => (
+                    <div key={section.title} className="takeaway-row">
+                      <strong>{section.title}</strong>
+                      <ul className="takeaway-inline-list">
+                        {section.items.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="section-card">
               <h3>{t("ai.nextMoves", "Next Best Moves")}</h3>
               <div className="insight-list">

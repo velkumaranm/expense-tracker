@@ -9,7 +9,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "proxy": "node server/ai-proxy.mjs"
+    "proxy": "node server/ai-proxy.mjs",
+    "admin:claim": "node scripts/set-admin-claim.mjs"
   },
   "dependencies": {
     "chart.js": "^4.5.1",

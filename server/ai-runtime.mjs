@@ -2,6 +2,14 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 let envLoaded = false;
+const FIREBASE_WEB_API_KEY =
+  process.env.FIREBASE_WEB_API_KEY ||
+  process.env.VITE_FIREBASE_API_KEY ||
+  "AIzaSyCkPhOoeRA02YiP-Eql-Zi-kZmP53LFrfA";
+const ADMIN_EMAILS = String(process.env.FINWISE_ADMIN_EMAILS || "")
+  .split(",")
+  .map((item) => item.trim().toLowerCase())
+  .filter(Boolean);
 
 export function loadLocalEnv() {
   if (envLoaded) return;
@@ -22,22 +30,105 @@ export function loadLocalEnv() {
   });
 }
 
-export function healthPayload() {
+function buildProxyUrl() {
+  return process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : `http://${process.env.AI_PROXY_HOST || "127.0.0.1"}:${process.env.AI_PROXY_PORT || 8787}`;
+}
+
+function decodeJwtPayload(token = "") {
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return {};
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return {};
+  }
+}
+
+async function lookupFirebaseUser(idToken) {
+  if (!idToken || !FIREBASE_WEB_API_KEY) return null;
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_WEB_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    }
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.users?.[0] || null;
+}
+
+export async function resolveViewerAccess(authHeader = "") {
+  const match = String(authHeader || "").match(/^Bearer\s+(.+)$/i);
+  const idToken = match?.[1];
+  if (!idToken) return { isAdmin: false, viewerRole: "user", email: "" };
+
+  const lookupUser = await lookupFirebaseUser(idToken);
+  if (!lookupUser) return { isAdmin: false, viewerRole: "user", email: "" };
+
+  const payloadClaims = decodeJwtPayload(idToken);
+  const email = String(
+    lookupUser.email || payloadClaims?.email || ""
+  ).trim().toLowerCase();
+  const tokenRole = payloadClaims?.role;
+  const tokenAdmin = payloadClaims?.admin === true;
+
+  let customClaims = {};
+  try {
+    customClaims = lookupUser.customAttributes ? JSON.parse(lookupUser.customAttributes) : {};
+  } catch {
+    customClaims = {};
+  }
+
+  const isAdmin = Boolean(
+    tokenAdmin ||
+      tokenRole === "admin" ||
+      customClaims?.admin === true ||
+      customClaims?.role === "admin" ||
+      (email && ADMIN_EMAILS.includes(email))
+  );
   return {
+    isAdmin,
+    viewerRole: isAdmin ? "admin" : "user",
+    email,
+  };
+}
+
+export async function isAdminRequest(authHeader = "") {
+  const result = await resolveViewerAccess(authHeader);
+  return result.isAdmin;
+}
+
+export function healthPayload({ includeSensitive = false, viewerRole = "user" } = {}) {
+  const fullProviders = {
+    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+    openai: Boolean(process.env.OPENAI_API_KEY),
+  };
+  const fullMarketProviders = {
+    alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
+    twelveData: Boolean(process.env.TWELVE_DATA_API_KEY),
+    finnhub: Boolean(process.env.FINNHUB_API_KEY),
+  };
+  const base = {
     ok: true,
-    proxyUrl: process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : `http://${process.env.AI_PROXY_HOST || "127.0.0.1"}:${process.env.AI_PROXY_PORT || 8787}`,
-    providers: {
-      anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-      openrouter: Boolean(process.env.OPENROUTER_API_KEY),
-      openai: Boolean(process.env.OPENAI_API_KEY),
-    },
-    marketProviders: {
-      alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
-      twelveData: Boolean(process.env.TWELVE_DATA_API_KEY),
-      finnhub: Boolean(process.env.FINNHUB_API_KEY),
-    },
+    viewerRole,
+    aiEnabled: Object.values(fullProviders).some(Boolean),
+    marketEnabled: Object.values(fullMarketProviders).some(Boolean),
+  };
+
+  if (!includeSensitive) return base;
+
+  return {
+    ...base,
+    proxyUrl: buildProxyUrl(),
+    providers: fullProviders,
+    marketProviders: fullMarketProviders,
     warnings: {
       likelyOpenAIKeyStoredAsOpenRouter:
         !process.env.OPENAI_API_KEY && (process.env.OPENROUTER_API_KEY || "").startsWith("sk-"),
@@ -171,6 +262,6 @@ export function sendNodeJson(res, body, status = 200) {
   res.setHeader("content-type", "application/json");
   res.setHeader("access-control-allow-origin", "*");
   res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-  res.setHeader("access-control-allow-headers", "content-type");
+  res.setHeader("access-control-allow-headers", "content-type,authorization");
   res.end(JSON.stringify(body));
 }
