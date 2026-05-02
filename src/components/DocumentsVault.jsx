@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   migrateLocalAttachmentToCloud,
   openVaultAttachment,
   purgeVaultAttachments,
   removeVaultAttachment,
-  saveVaultAttachmentToCloud,
+  saveVaultAttachment,
+  syncVaultAttachmentToCloud,
 } from "../lib/vaultStorage";
 import { goalId } from "../lib/utils";
 
@@ -46,9 +47,9 @@ function fmtSize(bytes) {
 export default function DocumentsVault({ docs, setDocs, showToast, user }) {
   const [form, setForm] = useState(emptyDoc);
   const [editingId, setEditingId] = useState("");
-  const [uploading, setUploading] = useState(false);
   const [attachmentMap, setAttachmentMap] = useState({});
   const [migrating, setMigrating] = useState(false);
+  const syncChainRef = useRef(Promise.resolve());
 
   const reminderCounts = useMemo(
     () =>
@@ -96,6 +97,49 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     setForm(emptyDoc);
   };
 
+  const updateAttachmentRecord = (docId, attachmentId, updater) => {
+    setDocs((prev) =>
+      prev.map((item) =>
+        item.id === docId
+          ? {
+              ...item,
+              attachments: (item.attachments || []).map((file) =>
+                file.id === attachmentId ? { ...file, ...(typeof updater === "function" ? updater(file) : updater) } : file
+              ),
+            }
+          : item
+      )
+    );
+    setAttachmentMap((prev) => ({
+      ...prev,
+      [docId]: (prev[docId] || []).map((file) =>
+        file.id === attachmentId ? { ...file, ...(typeof updater === "function" ? updater(file) : updater) } : file
+      ),
+    }));
+  };
+
+  const queueSync = (task) => {
+    syncChainRef.current = syncChainRef.current.then(task).catch(() => {});
+    return syncChainRef.current;
+  };
+
+  const syncAttachment = async (docId, attachment) => {
+    if (!user?.uid) {
+      updateAttachmentRecord(docId, attachment.id, { syncStatus: "local", lastError: "Sign in to sync this file to cloud." });
+      return;
+    }
+    updateAttachmentRecord(docId, attachment.id, { syncStatus: "syncing", lastError: "" });
+    try {
+      const uploaded = await syncVaultAttachmentToCloud(user.uid, docId, attachment);
+      updateAttachmentRecord(docId, attachment.id, uploaded);
+    } catch (error) {
+      updateAttachmentRecord(docId, attachment.id, {
+        syncStatus: "error",
+        lastError: error.message || "Cloud sync failed.",
+      });
+    }
+  };
+
   const saveDoc = () => {
     if (!form.title) return;
     const next = {
@@ -141,23 +185,22 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
   const uploadFiles = async (docId, files) => {
     const list = Array.from(files || []);
     if (!docId || !list.length) return;
-    setUploading(true);
     try {
       const saved = [];
       for (const file of list) {
         if (file.size > 2 * 1024 * 1024) {
           throw new Error(`${file.name} is larger than 2 MB. Keep uploads lightweight for browser vault storage.`);
         }
-        const record = await saveVaultAttachmentToCloud(user?.uid, docId, file);
+        const record = await saveVaultAttachment(docId, file);
         saved.push({
           id: record.id,
           name: record.name,
           type: record.type,
           size: record.size,
           storedAt: record.storedAt,
-          storagePath: record.storagePath,
-          downloadUrl: record.downloadUrl,
           storageDriver: record.storageDriver,
+          syncStatus: record.syncStatus,
+          lastError: record.lastError,
         });
       }
       setDocs((prev) =>
@@ -168,11 +211,9 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         )
       );
       setAttachmentMap((prev) => ({ ...prev, [docId]: [...(prev[docId] || []), ...saved] }));
-      showToast(`${saved.length} file${saved.length === 1 ? "" : "s"} uploaded to the vault.`);
+      showToast(`${saved.length} file${saved.length === 1 ? "" : "s"} saved locally. Cloud sync is running in the background.`);
     } catch (error) {
       showToast(error.message || "Upload failed.", "error");
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -250,6 +291,19 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       setMigrating(false);
     }
   };
+
+  useEffect(() => {
+    if (!user?.uid || !docs.length) return;
+    const pending = docs.flatMap((item) =>
+      (item.attachments || [])
+        .filter((file) => !file.storagePath && !file.downloadUrl && (file.syncStatus || "local") === "local")
+        .map((file) => ({ docId: item.id, file }))
+    );
+    if (!pending.length) return;
+    pending.forEach(({ docId, file }) => {
+      queueSync(() => syncAttachment(docId, file));
+    });
+  }, [docs, user]);
 
   const exportVault = () => {
     const payload = {
@@ -329,7 +383,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         <div className="form-card">
           <div className="vault-toolbar" style={{ marginBottom: 14 }}>
             <div className="muted vault-toolbar-copy">
-              Vault reminders sync with your account. File uploads now live in Firebase Storage instead of this browser only.
+              Vault reminders sync with your account. Files appear here immediately from local storage, then move to your cloud vault in the background.
             </div>
             <div className="vault-toolbar-actions">
               <button className="btn-secondary" onClick={exportVault}>Export Vault</button>
@@ -430,14 +484,14 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
                   <div className="mini-card">
                     <div className="k">Attached files</div>
                     <div className="v">{attachments.length}</div>
-                    <div className="muted">Cloud vault files tied to this document.</div>
+                    <div className="muted">Local-first files tied to this document. Cloud sync runs in the background.</div>
                   </div>
                 </div>
                 {item.reference ? <div className="stat-line"><span>Reference</span><span>{item.reference}</span></div> : null}
                 {item.note ? <p className="muted" style={{ marginTop: 10 }}>{item.note}</p> : null}
                 <div className="vault-upload-row">
                   <label className="btn-secondary vault-upload-btn">
-                    {uploading ? "Uploading..." : "Upload Files"}
+                    Upload Files
                     <input
                       type="file"
                       multiple
@@ -448,24 +502,54 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
                       }}
                     />
                   </label>
-                  <span className="muted">PDF, image, or statement up to 2 MB each. Stored in your Finwise cloud vault.</span>
+                  <span className="muted">PDF, image, or statement up to 2 MB each. Files save locally first, then sync to your Finwise cloud vault.</span>
                 </div>
-                {attachments.length ? (
-                  <div className="stack" style={{ marginTop: 12 }}>
-                    {attachments.map((file) => (
-                      <div key={file.id} className="vault-file-row">
-                        <div>
-                          <strong>{file.name}</strong>
-                          <p className="muted">{fmtSize(file.size)} • {file.type || "file"}</p>
-                        </div>
-                        <div className="setting-row">
-                          <button className="tx-btn" onClick={() => openAttachment(file.id)}>Open</button>
-                          <button className="tx-btn del" onClick={() => removeAttachment(item.id, file.id)}>Delete</button>
-                        </div>
-                      </div>
-                    ))}
+                <div className="vault-files-block">
+                  <div className="vault-files-head">
+                    <strong>Files in vault</strong>
+                    <span className="muted">{attachments.length ? `${attachments.length} file${attachments.length === 1 ? "" : "s"} attached` : "No files attached yet"}</span>
                   </div>
-                ) : null}
+                  {attachments.length ? (
+                    <div className="stack" style={{ marginTop: 10 }}>
+                      {attachments.map((file) => (
+                        <div key={file.id} className="vault-file-row">
+                          <div>
+                            <strong>{file.name}</strong>
+                            <p className="muted">{fmtSize(file.size)} • {file.type || "file"}</p>
+                            <div className="vault-sync-meta">
+                              <span className={`sync-pill ${file.syncStatus || "local"}`}>
+                                {file.syncStatus === "synced"
+                                  ? "Synced"
+                                  : file.syncStatus === "syncing"
+                                    ? "Syncing"
+                                    : file.syncStatus === "error"
+                                      ? "Retry needed"
+                                      : "Saved locally"}
+                              </span>
+                              {file.lastError ? <span className="muted">{file.lastError}</span> : null}
+                            </div>
+                          </div>
+                          <div className="setting-row">
+                            <button className="tx-btn" onClick={() => openAttachment(file.id)}>Open</button>
+                            {file.syncStatus !== "synced" ? (
+                              <button
+                                className="tx-btn edit"
+                                onClick={() => queueSync(() => syncAttachment(item.id, file))}
+                              >
+                                Retry
+                              </button>
+                            ) : null}
+                            <button className="tx-btn del" onClick={() => removeAttachment(item.id, file.id)}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="vault-files-empty muted">
+                      Upload a PDF, image, or statement and it will appear here with Open and Delete actions.
+                    </div>
+                  )}
+                </div>
                 <div className="setting-row" style={{ marginTop: 12, justifyContent: "flex-end" }}>
                   <button className="tx-btn edit" onClick={() => editDoc(item)}>Edit</button>
                   <button className="tx-btn del" onClick={() => removeDoc(item.id)}>Delete</button>

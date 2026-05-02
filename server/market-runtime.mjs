@@ -7,6 +7,7 @@ const YAHOO_ENDPOINTS = [
   "https://query1.finance.yahoo.com/v7/finance/quote",
   "https://query2.finance.yahoo.com/v8/finance/quote",
 ];
+const COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price";
 const ALPHA_MIN_INTERVAL_MS = 1200;
 const TWELVE_MIN_INTERVAL_MS = 150;
 const FINNHUB_MIN_INTERVAL_MS = 1100;
@@ -46,6 +47,32 @@ const INDIAN_NAME_ALIASES = [
   [/silver etf/i, "SILVERCASE.NS"],
   [/tata teleservices/i, "TTML.NS"],
 ];
+
+const CRYPTO_ID_ALIASES = {
+  BTC: "bitcoin",
+  XBT: "bitcoin",
+  ETH: "ethereum",
+  BNB: "binancecoin",
+  XRP: "ripple",
+  SOL: "solana",
+  MATIC: "matic-network",
+  DOGE: "dogecoin",
+  ADA: "cardano",
+  DOT: "polkadot",
+  TRX: "tron",
+  AVAX: "avalanche-2",
+  LINK: "chainlink",
+  LTC: "litecoin",
+};
+
+const COMMODITY_YAHOO_SYMBOLS = {
+  "XAU/USD": { symbol: "GC=F", currency: "USD", priceLabel: "Yahoo delayed futures" },
+  "XAG/USD": { symbol: "SI=F", currency: "USD", priceLabel: "Yahoo delayed futures" },
+  WTI: { symbol: "CL=F", currency: "USD", priceLabel: "Yahoo delayed futures" },
+  BRENT: { symbol: "BZ=F", currency: "USD", priceLabel: "Yahoo delayed futures" },
+  NATURAL_GAS: { symbol: "NG=F", currency: "USD", priceLabel: "Yahoo delayed futures" },
+  COPPER: { symbol: "HG=F", currency: "USD", priceLabel: "Yahoo delayed futures" },
+};
 
 function toUrl(path, params = {}) {
   const url = new URL(path);
@@ -159,6 +186,15 @@ async function fetchText(url) {
   return res.text();
 }
 
+async function fetchCoinGeckoSimple(id, vsCurrencies = ["usd", "inr"]) {
+  const url = toUrl(COINGECKO_SIMPLE, {
+    ids: id,
+    vs_currencies: vsCurrencies.join(","),
+    include_last_updated_at: "true",
+  });
+  return fetchJson(url);
+}
+
 async function wait(ms) {
   if (ms <= 0) return;
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -208,12 +244,69 @@ async function fetchYahooQuotes(symbols) {
   const joined = Array.isArray(symbols) ? symbols.join(",") : String(symbols || "");
   for (const endpoint of YAHOO_ENDPOINTS) {
     try {
-      const data = await fetchJson(toUrl(endpoint, { symbols: joined }));
+      const url = toUrl(endpoint, { symbols: joined });
+      const res = await fetch(url, {
+        headers: {
+          "user-agent": "Mozilla/5.0 Finwise/1.0",
+          accept: "application/json,text/plain,*/*",
+        },
+      });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!res.ok) continue;
       const results = data?.quoteResponse?.result;
       if (Array.isArray(results) && results.length) return results;
     } catch {}
   }
   return [];
+}
+
+async function fetchYahooChartQuote(symbol) {
+  const endpoint = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`;
+  const url = toUrl(endpoint, { range: "5d", interval: "1d" });
+  const res = await fetch(url, {
+    headers: {
+      "user-agent": "Mozilla/5.0 Finwise/1.0",
+      accept: "application/json,text/plain,*/*",
+    },
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!res.ok) {
+    throw new Error(`Yahoo chart request failed with ${res.status}`);
+  }
+  const result = data?.chart?.result?.[0];
+  const quote = result?.indicators?.quote?.[0];
+  const closes = Array.isArray(quote?.close) ? quote.close : [];
+  const timestamps = Array.isArray(result?.timestamp) ? result.timestamp : [];
+  for (let i = closes.length - 1; i >= 0; i -= 1) {
+    const price = normalizeNumber(closes[i]);
+    const timestamp = timestamps[i];
+    if (price > 0 && timestamp) {
+      return {
+        price,
+        date: new Date(Number(timestamp) * 1000).toISOString().slice(0, 10),
+      };
+    }
+  }
+  throw new Error("Yahoo chart did not return a usable close.");
+}
+
+function normalizeCryptoId(symbol, name = "") {
+  const upper = String(symbol || "").trim().toUpperCase();
+  const base = upper.includes("/")
+    ? upper.split("/")[0]
+    : upper.includes(":")
+      ? upper.split(":").pop().replace(/USDT$|USD$|INR$/i, "")
+      : upper.replace(/USDT$|USD$|INR$/i, "");
+  if (CRYPTO_ID_ALIASES[base]) return CRYPTO_ID_ALIASES[base];
+  const title = String(name || "").toLowerCase();
+  for (const [ticker, id] of Object.entries(CRYPTO_ID_ALIASES)) {
+    if (title.includes(id.replace(/-/g, " ")) || title.includes(ticker.toLowerCase())) {
+      return id;
+    }
+  }
+  return "";
 }
 
 function providerAvailability() {
@@ -787,6 +880,26 @@ async function refreshCryptoHolding(holding) {
     }
   }
   if (!latest) {
+    try {
+      const coinId = normalizeCryptoId(symbol, holding?.name);
+      if (coinId) {
+        const data = await fetchCoinGeckoSimple(coinId, ["usd", "inr"]);
+        const point = data?.[coinId];
+        const market = symbol.includes("/INR") ? "INR" : "USD";
+        const price = normalizeNumber(market === "INR" ? point?.inr : point?.usd);
+        const updatedAt = point?.last_updated_at
+          ? new Date(Number(point.last_updated_at) * 1000).toISOString()
+          : new Date().toISOString();
+        if (price) {
+          latest = { date: updatedAt.slice(0, 10), price };
+          source = "coingecko";
+        }
+      }
+    } catch (error) {
+      failures.push(error.message || "CoinGecko failed");
+    }
+  }
+  if (!latest) {
     throw new Error(process.env.TWELVE_DATA_API_KEY || process.env.FINNHUB_API_KEY || process.env.ALPHA_VANTAGE_API_KEY ? normalizeFallbackFailure(failures) : "Configure TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY to refresh crypto holdings.");
   }
   const units = normalizeNumber(holding.units);
@@ -800,9 +913,9 @@ async function refreshCryptoHolding(holding) {
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
-    currency: holding.currency || "USD",
+    currency: symbol.includes("/INR") ? "INR" : "USD",
     source,
-    priceLabel: source === "finnhub" ? "Latest quote" : "Latest close",
+    priceLabel: source === "finnhub" ? "Latest quote" : source === "coingecko" ? "CoinGecko spot" : "Latest close",
     refreshedAt: new Date().toISOString(),
     refreshError: "",
   };
@@ -811,37 +924,84 @@ async function refreshCryptoHolding(holding) {
 async function refreshCommodityHolding(holding) {
   const symbol = String(holding.symbol || "").trim().toUpperCase();
   if (!symbol) throw new Error(`Missing symbol for ${holding.name || "commodity holding"}`);
-  if (!process.env.ALPHA_VANTAGE_API_KEY) {
-    throw new Error("ALPHA_VANTAGE_API_KEY is required to refresh commodity holdings.");
-  }
   let latest = null;
   let priceLabel = "Latest close";
-  if (symbol === "XAU/USD" || symbol === "XAG/USD") {
-    const [fromCurrency, toCurrency] = symbol.split("/");
-    const data = await fetchAlphaJson({
-      function: "CURRENCY_EXCHANGE_RATE",
-      from_currency: fromCurrency,
-      to_currency: toCurrency,
-      apikey: process.env.ALPHA_VANTAGE_API_KEY,
-    });
-    const quote = data?.["Realtime Currency Exchange Rate"];
-    const price = normalizeNumber(quote?.["5. Exchange Rate"]);
-    const date = quote?.["6. Last Refreshed"] || new Date().toISOString();
-    if (!price) throw new Error(`Latest commodity price unavailable for ${holding.name || symbol}`);
-    latest = { date, price };
-    priceLabel = "Latest FX-derived spot";
-  } else {
-    const data = await fetchAlphaJson({
-      function: symbol,
-      interval: "daily",
-      apikey: process.env.ALPHA_VANTAGE_API_KEY,
-    });
-    const rows = Array.isArray(data?.data) ? data.data : [];
-    const point = rows[0];
-    const price = normalizeNumber(point?.value);
-    if (!price) throw new Error(`Latest commodity price unavailable for ${holding.name || symbol}`);
-    latest = { date: point?.date || "", price };
-    priceLabel = "Latest commodity print";
+  let source = "";
+  const failures = [];
+  if (process.env.ALPHA_VANTAGE_API_KEY) {
+    try {
+      if (symbol === "XAU/USD" || symbol === "XAG/USD") {
+        const [fromCurrency, toCurrency] = symbol.split("/");
+        const data = await fetchAlphaJson({
+          function: "CURRENCY_EXCHANGE_RATE",
+          from_currency: fromCurrency,
+          to_currency: toCurrency,
+          apikey: process.env.ALPHA_VANTAGE_API_KEY,
+        });
+        const quote = data?.["Realtime Currency Exchange Rate"];
+        const price = normalizeNumber(quote?.["5. Exchange Rate"]);
+        const date = quote?.["6. Last Refreshed"] || new Date().toISOString();
+        if (!price) throw new Error(`Latest commodity price unavailable for ${holding.name || symbol}`);
+        latest = { date, price };
+        priceLabel = "Latest FX-derived spot";
+        source = "alpha-vantage";
+      } else {
+        const data = await fetchAlphaJson({
+          function: symbol,
+          interval: "daily",
+          apikey: process.env.ALPHA_VANTAGE_API_KEY,
+        });
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const point = rows[0];
+        const price = normalizeNumber(point?.value);
+        if (!price) throw new Error(`Latest commodity price unavailable for ${holding.name || symbol}`);
+        latest = { date: point?.date || "", price };
+        priceLabel = "Latest commodity print";
+        source = "alpha-vantage";
+      }
+    } catch (error) {
+      failures.push(error.message || "Alpha Vantage failed");
+    }
+  }
+  if (!latest) {
+    try {
+      const yahooMeta = COMMODITY_YAHOO_SYMBOLS[symbol];
+      if (yahooMeta) {
+        const quotes = await fetchYahooQuotes([yahooMeta.symbol]);
+        const usable = Array.isArray(quotes)
+          ? quotes.find((quote) => Number.isFinite(Number(quote?.regularMarketPrice)) && Number(quote?.regularMarketPrice) > 0)
+          : null;
+        if (!usable) throw new Error(`Yahoo did not return a commodity quote for ${symbol}`);
+        const quoteDate = usable?.regularMarketTime
+          ? new Date(Number(usable.regularMarketTime) * 1000).toISOString()
+          : new Date().toISOString();
+        latest = { date: quoteDate.slice(0, 10), price: Number(usable.regularMarketPrice) };
+        priceLabel = yahooMeta.priceLabel;
+        source = "yahoo-finance";
+      }
+    } catch (error) {
+      failures.push(error.message || "Yahoo Finance failed");
+    }
+  }
+  if (!latest) {
+    try {
+      const yahooMeta = COMMODITY_YAHOO_SYMBOLS[symbol];
+      if (yahooMeta) {
+        const chart = await fetchYahooChartQuote(yahooMeta.symbol);
+        if (!chart?.price) throw new Error(`Yahoo chart did not return a commodity close for ${symbol}`);
+        latest = { date: chart.date, price: chart.price };
+        priceLabel = "Yahoo delayed close";
+        source = "yahoo-finance-chart";
+      }
+    } catch (error) {
+      failures.push(error.message || "Yahoo Finance chart failed");
+    }
+  }
+  if (!latest) {
+    if (!process.env.ALPHA_VANTAGE_API_KEY && !COMMODITY_YAHOO_SYMBOLS[symbol]) {
+      throw new Error("No commodity provider is configured for this symbol yet.");
+    }
+    throw new Error(normalizeFallbackFailure(failures));
   }
   const units = normalizeNumber(holding.units);
   const investedValue = units * normalizeNumber(holding.costPerUnit);
@@ -854,8 +1014,8 @@ async function refreshCommodityHolding(holding) {
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
-    currency: symbol === "XAU/USD" || symbol === "XAG/USD" ? "USD" : (holding.currency || "USD"),
-    source: "alpha-vantage",
+    currency: "USD",
+    source,
     priceLabel,
     refreshedAt: new Date().toISOString(),
     refreshError: "",

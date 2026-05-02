@@ -505,6 +505,20 @@ export default function App() {
     localStorage.setItem(getStorageKey(user.uid, "notifications"), String(notificationsEnabled));
   }, [notificationsEnabled, user]);
 
+  const hasPendingVaultSync = vaultDocs.some((item) =>
+    (item.attachments || []).some((file) => ["local", "syncing", "error"].includes(file?.syncStatus || ""))
+  );
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (!hasPendingVaultSync) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasPendingVaultSync]);
+
   const showToast = useCallback((msg, kind = "success") => {
     setToast({ msg, kind });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -567,6 +581,10 @@ export default function App() {
     return next;
   };
   const logout = () => {
+    if (hasPendingVaultSync) {
+      const proceed = window.confirm("Some vault files are still local or syncing. Sign out anyway?");
+      if (!proceed) return;
+    }
     signOut(auth);
     setActiveTab("dashboard");
   };

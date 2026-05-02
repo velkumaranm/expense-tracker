@@ -26,6 +26,15 @@ export async function fetchMarketFx() {
   return data;
 }
 
+const COMMODITY_RESCUE_MAP = {
+  "XAU/USD": { symbol: "GC=F", currency: "USD", label: "Yahoo delayed futures" },
+  "XAG/USD": { symbol: "SI=F", currency: "USD", label: "Yahoo delayed futures" },
+  WTI: { symbol: "CL=F", currency: "USD", label: "Yahoo delayed futures" },
+  BRENT: { symbol: "BZ=F", currency: "USD", label: "Yahoo delayed futures" },
+  NATURAL_GAS: { symbol: "NG=F", currency: "USD", label: "Yahoo delayed futures" },
+  COPPER: { symbol: "HG=F", currency: "USD", label: "Yahoo delayed futures" },
+};
+
 function unique(values = []) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -81,6 +90,11 @@ async function fetchYahooQuotes(symbols) {
   return [];
 }
 
+function yahooCommoditySymbol(item) {
+  const raw = String(item?.symbol || item?.quoteSymbol || "").trim().toUpperCase();
+  return COMMODITY_RESCUE_MAP[raw] || null;
+}
+
 export async function rescueIndianHoldingsQuotes(holdings) {
   const targets = (holdings || []).filter((item) => likelyIndianHolding(item) && item.refreshError);
   if (!targets.length) return holdings;
@@ -126,6 +140,59 @@ export async function rescueIndianHoldingsQuotes(holdings) {
       gainLoss: currentValue - investedValue,
       priceDate: quoteDate,
       priceLabel: "Yahoo close/last",
+      source: "yahoo-finance-browser",
+      refreshedAt: new Date().toISOString(),
+      refreshError: "",
+    };
+  });
+}
+
+export async function rescueCommodityQuotes(holdings) {
+  const targets = (holdings || []).filter((item) => item?.kind === "commodity" && item.refreshError);
+  if (!targets.length) return holdings;
+
+  const symbolMap = new Map();
+  const yahooSymbols = unique(
+    targets.flatMap((item) => {
+      const meta = yahooCommoditySymbol(item);
+      if (!meta) return [];
+      symbolMap.set(meta.symbol, item.id);
+      return [meta.symbol];
+    })
+  );
+  if (!yahooSymbols.length) return holdings;
+
+  const quotes = await fetchYahooQuotes(yahooSymbols);
+  if (!quotes.length) return holdings;
+
+  const byHoldingId = new Map();
+  quotes.forEach((quote) => {
+    const price = Number(quote?.regularMarketPrice);
+    if (!Number.isFinite(price) || price <= 0) return;
+    const holdingId = symbolMap.get(String(quote.symbol || "").toUpperCase());
+    if (!holdingId || byHoldingId.has(holdingId)) return;
+    byHoldingId.set(holdingId, quote);
+  });
+
+  return holdings.map((item) => {
+    const quote = byHoldingId.get(item.id);
+    if (!quote) return item;
+    const meta = yahooCommoditySymbol(item);
+    const currentPrice = Number(quote.regularMarketPrice || 0);
+    const units = Number(item.units || 0);
+    const investedValue = Number(item.investedValue || units * Number(item.costPerUnit || 0));
+    const currentValue = units * currentPrice;
+    const quoteDate = quote?.regularMarketTime
+      ? new Date(Number(quote.regularMarketTime) * 1000).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+    return {
+      ...item,
+      currency: meta?.currency || item.currency || "USD",
+      currentPrice,
+      currentValue,
+      gainLoss: currentValue - investedValue,
+      priceDate: quoteDate,
+      priceLabel: meta?.label || "Yahoo delayed quote",
       source: "yahoo-finance-browser",
       refreshedAt: new Date().toISOString(),
       refreshError: "",

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { refreshMarketHoldings, rescueIndianHoldingsQuotes, searchMarketInstruments } from "../lib/market";
+import { refreshMarketHoldings, rescueCommodityQuotes, rescueIndianHoldingsQuotes, searchMarketInstruments } from "../lib/market";
 import { convertAmount, fmtINR, fmtMoney, goalId } from "../lib/utils";
 import { useI18n } from "../lib/i18n";
 
@@ -180,13 +180,58 @@ function isIndianHolding(item) {
   );
 }
 
+function isGlobalQuoteHolding(item) {
+  const symbol = String(item?.quoteSymbol || item?.symbol || "").toUpperCase();
+  const source = String(item?.source || "").toLowerCase();
+  const account = String(item?.account || "").toLowerCase();
+  return (
+    !isIndianHolding(item) &&
+    (
+      source.includes("twelve-data") ||
+      source.includes("finnhub") ||
+      source.includes("alpha-vantage") ||
+      source.includes("alpaca") ||
+      source.includes("yahoo-finance") ||
+      account.includes("alpaca") ||
+      account.includes("ibkr") ||
+      account.includes("interactive brokers") ||
+      account.includes("robinhood") ||
+      account.includes("etrade") ||
+      account.includes("charles schwab") ||
+      account.includes("fidelity") ||
+      /^[A-Z0-9.-]+$/.test(symbol)
+    )
+  );
+}
+
 function holdingCurrency(item) {
   const explicit = String(item?.currency || "").toUpperCase();
   if (item?.kind === "mutualFund") return "INR";
   if (isIndianHolding(item)) return "INR";
+  if (explicit === "USD") return "USD";
+  if (explicit === "INR" && isGlobalQuoteHolding(item)) return "USD";
   if (explicit && explicit !== "INR") return explicit;
-  if (item?.kind === "stock" || item?.kind === "crypto" || item?.kind === "commodity") return "USD";
+  if (!item?.kind || item?.kind === "stock" || item?.kind === "crypto" || item?.kind === "commodity") return "USD";
   return explicit || "INR";
+}
+
+function defaultCurrencyForDraft(form) {
+  if (form?.kind === "mutualFund") return "INR";
+  const quote = String(form?.quoteSymbol || form?.symbol || "").toUpperCase();
+  const account = String(form?.account || "").toLowerCase();
+  const looksIndian =
+    quote.includes(".NS") ||
+    quote.includes(".BO") ||
+    quote.includes(".NSE") ||
+    quote.includes(".BSE") ||
+    quote.includes(":NSE") ||
+    quote.includes(":BSE") ||
+    account.includes("zerodha") ||
+    account.includes("groww") ||
+    account.includes("upstox") ||
+    account.includes("angel") ||
+    account.includes("indmoney");
+  return looksIndian ? "INR" : "USD";
 }
 
 function displayAmount(amount, fromCurrency, viewCurrency, fx) {
@@ -286,7 +331,12 @@ export default function PortfolioHoldings({
       name: item.name || prev.name,
       symbol: item.symbol || "",
       quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") || "",
-      currency: item.currency || (suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "").includes(".NS") ? "INR" : "USD"),
+      currency: item.currency || defaultCurrencyForDraft({
+        kind: item.kind || prev.kind,
+        symbol: item.symbol || "",
+        quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") || "",
+        account: item.account || "",
+      }),
       schemeCode: item.schemeCode || "",
     }));
     setSearchState((prev) => ({ ...prev, results: [] }));
@@ -299,7 +349,12 @@ export default function PortfolioHoldings({
       name: item.name || "",
       symbol: item.symbol || "",
       quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || "stock", item.name || "", item.symbol || "") || "",
-      currency: item.currency || (suggestQuoteSymbol(item.kind || "stock", item.name || "", item.symbol || "").includes(".NS") ? "INR" : "USD"),
+      currency: item.currency || defaultCurrencyForDraft({
+        kind: item.kind || "stock",
+        symbol: item.symbol || "",
+        quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || "stock", item.name || "", item.symbol || "") || "",
+        account: item.account || "",
+      }),
       schemeCode: item.schemeCode || "",
       units: String(item.units ?? ""),
       costPerUnit: String(item.costPerUnit ?? ""),
@@ -340,7 +395,10 @@ export default function PortfolioHoldings({
       name: form.name.trim(),
       symbol: form.symbol.trim().toUpperCase(),
       quoteSymbol: (form.quoteSymbol.trim().toUpperCase() || suggestQuoteSymbol(form.kind, form.name, form.symbol)),
-      currency: form.kind === "mutualFund" ? "INR" : (form.currency || (suggestQuoteSymbol(form.kind, form.name, form.symbol).includes(".NS") ? "INR" : "USD")),
+      currency: defaultCurrencyForDraft({
+        ...form,
+        quoteSymbol: form.quoteSymbol.trim().toUpperCase() || suggestQuoteSymbol(form.kind, form.name, form.symbol),
+      }),
       schemeCode: form.schemeCode.trim(),
       units: Number(form.units),
       costPerUnit: Number(form.costPerUnit),
@@ -407,7 +465,8 @@ export default function PortfolioHoldings({
           quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind, item.name, item.symbol),
         }))
       );
-      const rescuedHoldings = await rescueIndianHoldingsQuotes(hydratedPayload.holdings || []);
+      const withIndianRescue = await rescueIndianHoldingsQuotes(hydratedPayload.holdings || []);
+      const rescuedHoldings = await rescueCommodityQuotes(withIndianRescue);
       setHoldings(rescuedHoldings);
       const stamp = hydratedPayload.summary?.lastRefreshAt || new Date().toISOString();
       const snapshotDate = stamp.slice(0, 10);

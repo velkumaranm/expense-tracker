@@ -51,6 +51,9 @@ export async function saveVaultAttachment(docId, file) {
     size: Number(file.size || 0),
     dataUrl,
     storedAt: new Date().toISOString(),
+    storageDriver: "indexeddb",
+    syncStatus: "local",
+    lastError: "",
   };
   await withStore("readwrite", (store, resolve, reject) => {
     const req = store.put(record);
@@ -111,7 +114,14 @@ export async function migrateLocalAttachmentToCloud(userId, docId, attachment) {
     storagePath,
     downloadUrl,
     storageDriver: "firebase",
+    syncStatus: "synced",
+    lastError: "",
   };
+}
+
+export async function syncVaultAttachmentToCloud(userId, docId, attachment) {
+  if (!attachment?.id) throw new Error("Missing local attachment reference.");
+  return migrateLocalAttachmentToCloud(userId, docId, attachment);
 }
 
 export async function openVaultAttachment(attachment) {

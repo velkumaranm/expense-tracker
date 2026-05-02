@@ -115,7 +115,17 @@ button{border:none}
 .vault-toolbar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .vault-upload-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px}
 .vault-upload-btn{position:relative;overflow:hidden}
+.vault-files-block{margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.vault-files-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.vault-files-head strong{font-size:12px;color:var(--text)}
+.vault-files-empty{padding:12px 14px;border:1px dashed var(--border);border-radius:12px;background:var(--surface);line-height:1.6}
 .vault-file-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card2)}
+.vault-sync-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.sync-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;border:1px solid var(--border);font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
+.sync-pill.synced{background:var(--income-dim);border-color:rgba(52,211,153,.28);color:var(--income)}
+.sync-pill.syncing{background:var(--accent-dim);border-color:rgba(200,169,110,.26);color:var(--accent)}
+.sync-pill.local{background:var(--card);color:var(--text2)}
+.sync-pill.error{background:var(--expense-dim);border-color:rgba(248,113,113,.28);color:var(--expense)}
 .form-card{padding:24px;display:flex;flex-direction:column}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .fg{display:flex;flex-direction:column;gap:6px}
