@@ -110,6 +110,9 @@ button{border:none}
 .timeline-item:last-child{border-bottom:none}
 .timeline-date{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text3);padding-top:3px}
 .timeline-body strong{display:block;font-size:12.5px;color:var(--text);margin-bottom:2px}
+.vault-toolbar{display:grid;gap:12px;align-items:start}
+.vault-toolbar-copy{max-width:62ch;text-align:left;line-height:1.65}
+.vault-toolbar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .vault-upload-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:12px}
 .vault-upload-btn{position:relative;overflow:hidden}
 .vault-file-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card2)}
@@ -165,6 +168,7 @@ textarea{min-height:92px;resize:vertical}
 .settings-section p{font-size:11.5px;color:var(--text3);line-height:1.55;margin-bottom:14px}
 .tab-loading-card{min-height:220px;display:grid;align-content:center;justify-items:start}
 .setting-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.install-row .muted{text-align:left;line-height:1.6}
 .account-badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .status-pill{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;border:1px solid var(--border);font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
 .status-pill.verified{background:var(--income-dim);border-color:rgba(52,211,153,.28);color:var(--income)}
@@ -297,5 +301,7 @@ textarea{min-height:92px;resize:vertical}
   .mobile-more-icon{font-size:18px}
   .mobile-account-card{display:grid;gap:10px;background:var(--card2);border:1px solid var(--border);border-radius:16px;padding:14px;margin-top:12px}
   .mobile-account-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .vault-toolbar-actions{align-items:stretch}
+  .vault-toolbar-actions > *{width:100%}
 }
 `;

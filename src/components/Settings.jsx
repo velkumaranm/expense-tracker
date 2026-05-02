@@ -34,6 +34,16 @@ export default function Settings({
   const [nextEmail, setNextEmail] = useState(user?.email || "");
   const [accountState, setAccountState] = useState({ loading: "", error: "", ok: "" });
   const [passkeyBusy, setPasskeyBusy] = useState("");
+  const isLocalInstallHost =
+    typeof window !== "undefined" &&
+    ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const installHint = pwaInstalled
+    ? "Finwise is already installed on this device."
+    : pwaInstallReady
+      ? "This device is ready to install Finwise."
+      : isLocalInstallHost
+        ? "Install prompts are usually limited in local development. Open the deployed HTTPS app and use your browser's Install App / Add to Home Screen action."
+        : "If your browser does not surface an install prompt, use its Add to Home Screen / Install App menu action.";
 
   const runAccountAction = async (loadingKey, action, successMessage) => {
     setAccountState({ loading: loadingKey, error: "", ok: "" });
@@ -105,16 +115,16 @@ export default function Settings({
         <p>
           Add Finwise to your home screen or desktop for a cleaner app-like experience, faster relaunch, and offline-ready shell caching.
         </p>
-        <div className="setting-row" style={{ alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+        <div className="setting-row install-row" style={{ alignItems: "center", justifyContent: "space-between", gap: 14 }}>
           <div className="muted" style={{ flex: 1, minWidth: 0 }}>
-            {pwaInstalled
-              ? "Finwise is already installed on this device."
-              : pwaInstallReady
-                ? "This device is ready to install Finwise."
-                : "If the install button is unavailable, open Finwise in the deployed Vercel app and use your browser's Add to Home Screen / Install App action."}
+            {installHint}
           </div>
-          <button className="btn-save" disabled={!pwaInstallReady || pwaInstalled} onClick={onInstallApp}>
-            {pwaInstalled ? "Installed" : pwaInstallReady ? "Install Finwise" : "Install unavailable"}
+          <button
+            className={pwaInstallReady && !pwaInstalled ? "btn-save" : "btn-secondary"}
+            disabled={pwaInstalled}
+            onClick={pwaInstallReady ? onInstallApp : undefined}
+          >
+            {pwaInstalled ? "Installed" : pwaInstallReady ? "Install Finwise" : "Use browser install menu"}
           </button>
         </div>
       </div>

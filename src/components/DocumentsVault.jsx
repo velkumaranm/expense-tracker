@@ -327,11 +327,11 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
 
       <div className="two-col">
         <div className="form-card">
-          <div className="setting-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div className="muted" style={{ flex: 1, minWidth: 0 }}>
+          <div className="vault-toolbar" style={{ marginBottom: 14 }}>
+            <div className="muted vault-toolbar-copy">
               Vault reminders sync with your account. File uploads now live in Firebase Storage instead of this browser only.
             </div>
-            <div className="setting-row">
+            <div className="vault-toolbar-actions">
               <button className="btn-secondary" onClick={exportVault}>Export Vault</button>
               <label className="btn-secondary vault-upload-btn">
                 Import Vault

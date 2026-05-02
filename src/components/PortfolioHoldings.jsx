@@ -159,11 +159,34 @@ function getAverageCost(item) {
   return units > 0 && invested > 0 ? fmtINR(invested / units) : fmtINR(0);
 }
 
+function isIndianHolding(item) {
+  const symbol = String(item?.quoteSymbol || item?.symbol || "").toUpperCase();
+  const account = String(item?.account || "").toLowerCase();
+  const source = String(item?.source || "").toLowerCase();
+  return (
+    item?.kind === "mutualFund" ||
+    symbol.includes(".NS") ||
+    symbol.includes(".BO") ||
+    symbol.includes(".NSE") ||
+    symbol.includes(".BSE") ||
+    symbol.includes(":NSE") ||
+    symbol.includes(":BSE") ||
+    account.includes("zerodha") ||
+    account.includes("groww") ||
+    account.includes("upstox") ||
+    account.includes("angel") ||
+    source.includes("nse-official-eod") ||
+    source.includes("mfapi")
+  );
+}
+
 function holdingCurrency(item) {
-  return String(
-    item?.currency ||
-    (String(item?.quoteSymbol || item?.symbol || "").toUpperCase().includes(".NS") ? "INR" : "USD")
-  ).toUpperCase();
+  const explicit = String(item?.currency || "").toUpperCase();
+  if (item?.kind === "mutualFund") return "INR";
+  if (isIndianHolding(item)) return "INR";
+  if (explicit && explicit !== "INR") return explicit;
+  if (item?.kind === "stock" || item?.kind === "crypto" || item?.kind === "commodity") return "USD";
+  return explicit || "INR";
 }
 
 function displayAmount(amount, fromCurrency, viewCurrency, fx) {
