@@ -14,3 +14,20 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+# Finwise Firebase Rules
+
+Before production, publish these repo-backed Firebase rules in the Firebase Console:
+
+- Firestore rules: `/firestore.rules`
+- Storage rules: `/storage.rules`
+
+They are scoped for the current Finwise data model:
+
+- Firestore app data lives under `users/{uid}/...`
+- Vault uploads live under `users/{uid}/vault/...`
+
+This ensures:
+
+- authenticated users can access only their own app data
+- vault files remain private per signed-in account
+- nothing else is publicly readable or writable

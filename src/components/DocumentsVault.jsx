@@ -8,6 +8,7 @@ import {
   syncVaultAttachmentToCloud,
 } from "../lib/vaultStorage";
 import { goalId } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 const DOC_TEMPLATES = [
   { title: "Health Insurance Policy", type: "Insurance", issuer: "Insurer", renewalDate: "", reminderDays: 30, reference: "", note: "" },
@@ -15,6 +16,29 @@ const DOC_TEMPLATES = [
   { title: "Home Loan Statement", type: "Loan", issuer: "Bank", renewalDate: "", reminderDays: 15, reference: "", note: "" },
   { title: "Tax Proof Bundle", type: "Tax", issuer: "Employer / CA", renewalDate: "", reminderDays: 20, reference: "", note: "" },
 ];
+
+const DOC_TEMPLATE_KEYS = {
+  "Health Insurance Policy": "vault.templateHealth",
+  "Term Life Policy": "vault.templateTerm",
+  "Home Loan Statement": "vault.templateLoan",
+  "Tax Proof Bundle": "vault.templateTax",
+};
+
+const DOC_TYPE_KEYS = {
+  Insurance: "vault.typeInsurance",
+  Loan: "vault.typeLoan",
+  Tax: "vault.typeTax",
+  Investment: "vault.typeInvestment",
+  Identity: "vault.typeIdentity",
+  Other: "vault.typeOther",
+};
+
+const STATUS_KEYS = {
+  "No renewal date": "vault.noRenewalDate",
+  Expired: "vault.expiredStatus",
+  "Due soon": "vault.dueSoonStatus",
+  Healthy: "vault.healthyStatus",
+};
 
 const emptyDoc = {
   title: "",
@@ -45,6 +69,7 @@ function fmtSize(bytes) {
 }
 
 export default function DocumentsVault({ docs, setDocs, showToast, user }) {
+  const { t } = useI18n();
   const [form, setForm] = useState(emptyDoc);
   const [editingId, setEditingId] = useState("");
   const [attachmentMap, setAttachmentMap] = useState({});
@@ -125,7 +150,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
 
   const syncAttachment = async (docId, attachment) => {
     if (!user?.uid) {
-      updateAttachmentRecord(docId, attachment.id, { syncStatus: "local", lastError: "Sign in to sync this file to cloud." });
+      updateAttachmentRecord(docId, attachment.id, { syncStatus: "local", lastError: t("vault.signInToSync", "Sign in to sync this file to cloud.") });
       return;
     }
     updateAttachmentRecord(docId, attachment.id, { syncStatus: "syncing", lastError: "" });
@@ -135,7 +160,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     } catch (error) {
       updateAttachmentRecord(docId, attachment.id, {
         syncStatus: "error",
-        lastError: error.message || "Cloud sync failed.",
+        lastError: error.message || t("vault.cloudSyncFailed", "Cloud sync failed."),
       });
     }
   };
@@ -148,11 +173,11 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     };
     if (editingId) {
       setDocs((prev) => prev.map((item) => (item.id === editingId ? { ...item, ...next } : item)));
-      showToast("Document updated.");
+      showToast(t("vault.documentUpdated", "Document updated."));
     } else {
       const id = goalId();
       setDocs((prev) => [{ id, ...next }, ...prev]);
-      showToast("Document reminder added.");
+      showToast(t("vault.documentAdded", "Document reminder added."));
     }
     resetForm();
   };
@@ -179,7 +204,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       delete next[id];
       return next;
     });
-    showToast("Document removed.", "warning");
+    showToast(t("vault.documentRemoved", "Document removed."), "warning");
   };
 
   const uploadFiles = async (docId, files) => {
@@ -189,7 +214,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       const saved = [];
       for (const file of list) {
         if (file.size > 2 * 1024 * 1024) {
-          throw new Error(`${file.name} is larger than 2 MB. Keep uploads lightweight for browser vault storage.`);
+          throw new Error(`${file.name} ${t("vault.fileTooLarge", "is larger than 2 MB. Keep uploads lightweight for browser vault storage.")}`);
         }
         const record = await saveVaultAttachment(docId, file);
         saved.push({
@@ -211,9 +236,9 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         )
       );
       setAttachmentMap((prev) => ({ ...prev, [docId]: [...(prev[docId] || []), ...saved] }));
-      showToast(`${saved.length} file${saved.length === 1 ? "" : "s"} saved locally. Cloud sync is running in the background.`);
+      showToast(`${saved.length} ${t("vault.filesSavedLocal", "file(s) saved locally. Cloud sync is running in the background.")}`);
     } catch (error) {
-      showToast(error.message || "Upload failed.", "error");
+      showToast(error.message || t("vault.uploadFailed", "Upload failed."), "error");
     }
   };
 
@@ -222,9 +247,9 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       const attachment = docs.flatMap((item) => item.attachments || []).find((item) => item.id === attachmentId);
       const url = await openVaultAttachment(attachment);
       const tab = window.open(url, "_blank", "noopener,noreferrer");
-      if (!tab) throw new Error("Allow pop-ups to open attached documents.");
+      if (!tab) throw new Error(t("vault.allowPopups", "Allow pop-ups to open attached documents."));
     } catch (error) {
-      showToast(error.message || "Could not open attachment.", "error");
+      showToast(error.message || t("vault.openFailed", "Could not open attachment."), "error");
     }
   };
 
@@ -244,7 +269,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       ...prev,
       [docId]: (prev[docId] || []).filter((file) => file.id !== attachmentId),
     }));
-    showToast("Attachment removed.", "warning");
+    showToast(t("vault.attachmentRemoved", "Attachment removed."), "warning");
   };
 
   const legacyLocalCount = useMemo(
@@ -260,7 +285,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
 
   const migrateLegacyAttachments = async () => {
     if (!user?.uid) {
-      showToast("Sign in before migrating vault files.", "error");
+      showToast(t("vault.signInBeforeMigrate", "Sign in before migrating vault files."), "error");
       return;
     }
     setMigrating(true);
@@ -284,9 +309,9 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       }
       setDocs(nextDocs);
       setAttachmentMap(Object.fromEntries(nextDocs.map((item) => [item.id, item.attachments || []])));
-      showToast("Legacy vault uploads were migrated to cloud storage.");
+      showToast(t("vault.legacyMigrated", "Legacy vault uploads were migrated to cloud storage."));
     } catch (error) {
-      showToast(error.message || "Vault migration failed.", "error");
+      showToast(error.message || t("vault.migrationFailed", "Vault migration failed."), "error");
     } finally {
       setMigrating(false);
     }
@@ -318,7 +343,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     anchor.download = `finwise-vault-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    showToast("Vault metadata exported.");
+    showToast(t("vault.exported", "Vault metadata exported."));
   };
 
   const importVault = async (file) => {
@@ -327,7 +352,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
       const text = await file.text();
       const payload = JSON.parse(text);
       const importedDocs = Array.isArray(payload?.docs) ? payload.docs : [];
-      if (!importedDocs.length) throw new Error("This export file does not contain any vault documents.");
+      if (!importedDocs.length) throw new Error(t("vault.importEmpty", "This export file does not contain any vault documents."));
       setDocs((prev) => {
         const existing = new Map(prev.map((item) => [item.id, item]));
         importedDocs.forEach((item) => {
@@ -339,9 +364,9 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         });
         return Array.from(existing.values());
       });
-      showToast(`Imported ${importedDocs.length} vault document${importedDocs.length === 1 ? "" : "s"}.`);
+      showToast(`${t("vault.imported", "Imported")} ${importedDocs.length} ${t("vault.vaultDocuments", "vault document(s)")}.`);
     } catch (error) {
-      showToast(error.message || "Could not import vault backup.", "error");
+      showToast(error.message || t("vault.importFailed", "Could not import vault backup."), "error");
     }
   };
 
@@ -351,31 +376,31 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     <>
       <div className="page-header">
         <div>
-          <h1>Documents Vault</h1>
-          <p>Store uploads, renewal reminders, and key references for insurance, loans, taxes, and wealth documents.</p>
+          <h1>{t("vault.title", "Documents Vault")}</h1>
+          <p>{t("vault.subtitle", "Store uploads, renewal reminders, and key references for insurance, loans, taxes, and wealth documents.")}</p>
         </div>
       </div>
 
       <div className="summary-grid">
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Tracked Documents</div>
+          <div className="sc-label">{t("vault.trackedDocs", "Tracked Documents")}</div>
           <div className="sc-value">{docs.length}</div>
-          <div className="sc-sub">Policies, statements, tax packs, and reminders stored in one command center.</div>
+          <div className="sc-sub">{t("vault.trackedDocsSub", "Policies, statements, tax packs, and reminders stored in one command center.")}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Uploads</div>
+          <div className="sc-label">{t("vault.uploads", "Uploads")}</div>
           <div className="sc-value" style={{ color: "var(--invest)" }}>{attachmentCount}</div>
-          <div className="sc-sub">Files attached to your Finwise cloud vault for cross-device reference and review.</div>
+          <div className="sc-sub">{t("vault.uploadsSub", "Files attached to your Finwise cloud vault for cross-device reference and review.")}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Due Soon</div>
+          <div className="sc-label">{t("vault.dueSoon", "Due Soon")}</div>
           <div className="sc-value" style={{ color: reminderCounts.dueSoon ? "var(--accent)" : "var(--income)" }}>{reminderCounts.dueSoon}</div>
-          <div className="sc-sub">Documents whose reminder window has already opened.</div>
+          <div className="sc-sub">{t("vault.dueSoonSub", "Documents whose reminder window has already opened.")}</div>
         </div>
         <div className="summary-card summary-span-3">
-          <div className="sc-label">Expired / Overdue</div>
+          <div className="sc-label">{t("vault.expired", "Expired / Overdue")}</div>
           <div className="sc-value" style={{ color: reminderCounts.expired ? "var(--expense)" : "var(--income)" }}>{reminderCounts.expired}</div>
-          <div className="sc-sub">Renewals or compliance items that need attention right away.</div>
+          <div className="sc-sub">{t("vault.expiredSub", "Renewals or compliance items that need attention right away.")}</div>
         </div>
       </div>
 
@@ -383,12 +408,12 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         <div className="form-card">
           <div className="vault-toolbar" style={{ marginBottom: 14 }}>
             <div className="muted vault-toolbar-copy">
-              Vault reminders sync with your account. Files appear here immediately from local storage, then move to your cloud vault in the background.
+              {t("vault.toolbarCopy", "Vault reminders sync with your account. Files appear here immediately from local storage, then move to your cloud vault in the background.")}
             </div>
             <div className="vault-toolbar-actions">
-              <button className="btn-secondary" onClick={exportVault}>Export Vault</button>
+              <button className="btn-secondary" onClick={exportVault}>{t("vault.export", "Export Vault")}</button>
               <label className="btn-secondary vault-upload-btn">
-                Import Vault
+                {t("vault.import", "Import Vault")}
                 <input
                   type="file"
                   accept="application/json"
@@ -401,17 +426,17 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
               </label>
               {legacyLocalCount ? (
                 <button className="btn-secondary" disabled={migrating} onClick={migrateLegacyAttachments}>
-                  {migrating ? "Migrating..." : `Migrate Local Files (${legacyLocalCount})`}
+                  {migrating ? t("vault.migrating", "Migrating...") : `${t("vault.migrateLocal", "Migrate Local Files")} (${legacyLocalCount})`}
                 </button>
               ) : null}
             </div>
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label className="fl" style={{ marginBottom: 8, display: "block" }}>Starter Templates</label>
+            <label className="fl" style={{ marginBottom: 8, display: "block" }}>{t("goals.starterTemplates", "Starter Templates")}</label>
             <div className="filter-strip" style={{ marginBottom: 0 }}>
               {DOC_TEMPLATES.map((template) => (
                 <button key={template.title} className="filter-chip" onClick={() => setForm({ ...template, attachments: [] })}>
-                  {template.title}
+                  {t(DOC_TEMPLATE_KEYS[template.title] || "vault.docTitle", template.title)}
                 </button>
               ))}
             </div>
@@ -419,39 +444,39 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
 
           <div className="form-grid">
             <div className="fg full">
-              <label className="fl">Document title</label>
-              <input className="fi" value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="Health insurance policy, home loan statement..." />
+              <label className="fl">{t("vault.docTitle", "Document Title")}</label>
+              <input className="fi" value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} placeholder={t("vault.docPlaceholder", "Health insurance policy, home loan statement...")} />
             </div>
             <div className="fg">
-              <label className="fl">Type</label>
+              <label className="fl">{t("vault.type", "Type")}</label>
               <select className="fs" value={form.type} onChange={(e) => setForm((prev) => ({ ...prev, type: e.target.value }))}>
-                {["Insurance", "Loan", "Tax", "Investment", "Identity", "Other"].map((option) => <option key={option}>{option}</option>)}
+                {["Insurance", "Loan", "Tax", "Investment", "Identity", "Other"].map((option) => <option key={option} value={option}>{t(DOC_TYPE_KEYS[option], option)}</option>)}
               </select>
             </div>
             <div className="fg">
-              <label className="fl">Issuer / Owner</label>
-              <input className="fi" value={form.issuer} onChange={(e) => setForm((prev) => ({ ...prev, issuer: e.target.value }))} placeholder="HDFC Life, SBI, CA, Zerodha..." />
+              <label className="fl">{t("vault.issuerOwner", "Issuer / Owner")}</label>
+              <input className="fi" value={form.issuer} onChange={(e) => setForm((prev) => ({ ...prev, issuer: e.target.value }))} placeholder={t("vault.issuerPlaceholder", "HDFC Life, SBI, CA, Zerodha...")} />
             </div>
             <div className="fg">
-              <label className="fl">Renewal or due date</label>
+              <label className="fl">{t("vault.renewalDate", "Renewal or Due Date")}</label>
               <input className="fi" type="date" value={form.renewalDate} onChange={(e) => setForm((prev) => ({ ...prev, renewalDate: e.target.value }))} />
             </div>
             <div className="fg">
-              <label className="fl">Reminder lead days</label>
+              <label className="fl">{t("vault.reminderLeadDays", "Reminder Lead Days")}</label>
               <input className="fi" type="number" value={form.reminderDays} onChange={(e) => setForm((prev) => ({ ...prev, reminderDays: e.target.value }))} />
             </div>
             <div className="fg full">
-              <label className="fl">Reference</label>
-              <input className="fi" value={form.reference} onChange={(e) => setForm((prev) => ({ ...prev, reference: e.target.value }))} placeholder="Policy number, folio, loan account, storage path..." />
+              <label className="fl">{t("vault.reference", "Reference")}</label>
+              <input className="fi" value={form.reference} onChange={(e) => setForm((prev) => ({ ...prev, reference: e.target.value }))} placeholder={t("vault.referencePlaceholder", "Policy number, folio, loan account, storage path...")} />
             </div>
             <div className="fg full">
-              <label className="fl">Notes</label>
-              <textarea className="fta" value={form.note} onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))} placeholder="Coverage amount, renewal checklist, nominee info, CA handoff notes..." />
+              <label className="fl">{t("vault.notes", "Notes")}</label>
+              <textarea className="fta" value={form.note} onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))} placeholder={t("vault.notesPlaceholder", "Coverage amount, renewal checklist, nominee info, CA handoff notes...")} />
             </div>
             <div className="fg full">
               <div className="setting-row" style={{ alignItems: "stretch" }}>
-                <button className="btn-primary" onClick={saveDoc}>{editingId ? "Save Changes" : "Add Reminder"}</button>
-                {editingId ? <button className="btn-secondary" onClick={resetForm}>Cancel</button> : null}
+                <button className="btn-primary" onClick={saveDoc}>{editingId ? t("vault.saveChanges", "Save Changes") : t("vault.addReminder", "Add Reminder")}</button>
+                {editingId ? <button className="btn-secondary" onClick={resetForm}>{t("common.cancel", "Cancel")}</button> : null}
               </div>
             </div>
           </div>
@@ -466,32 +491,32 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
                 <div className="section-head" style={{ marginBottom: 10 }}>
                   <div>
                     <h3 style={{ marginBottom: 2 }}>{item.title}</h3>
-                    <p style={{ marginBottom: 0 }}>{item.type}{item.issuer ? ` • ${item.issuer}` : ""}</p>
+                    <p style={{ marginBottom: 0 }}>{t(DOC_TYPE_KEYS[item.type], item.type)}{item.issuer ? ` • ${item.issuer}` : ""}</p>
                   </div>
-                  <span className={`status-pill ${status.tone}`}>{status.label}</span>
+                  <span className={`status-pill ${status.tone}`}>{t(STATUS_KEYS[status.label], status.label)}</span>
                 </div>
                 <div className="mini-grid">
                   <div className="mini-card">
-                    <div className="k">Renewal date</div>
+                    <div className="k">{t("vault.renewalDate", "Renewal or Due Date")}</div>
                     <div className="v">{item.renewalDate || "—"}</div>
-                    <div className="muted">{status.daysLeft == null ? "No date on file." : status.daysLeft < 0 ? `${Math.abs(status.daysLeft)} day(s) overdue.` : `${status.daysLeft} day(s) left.`}</div>
+                    <div className="muted">{status.daysLeft == null ? t("vault.noDateOnFile", "No date on file.") : status.daysLeft < 0 ? `${Math.abs(status.daysLeft)} ${t("vault.daysOverdue", "day(s) overdue.")}` : `${status.daysLeft} ${t("vault.daysLeft", "day(s) left.")}`}</div>
                   </div>
                   <div className="mini-card">
-                    <div className="k">Reminder lead</div>
-                    <div className="v">{item.reminderDays} days</div>
-                    <div className="muted">Reminder window opens this many days before renewal.</div>
+                    <div className="k">{t("vault.reminderLead", "Reminder Lead")}</div>
+                    <div className="v">{item.reminderDays} {t("vault.days", "days")}</div>
+                    <div className="muted">{t("vault.reminderLeadSub", "Reminder window opens this many days before renewal.")}</div>
                   </div>
                   <div className="mini-card">
-                    <div className="k">Attached files</div>
+                    <div className="k">{t("vault.attachedFiles", "Attached Files")}</div>
                     <div className="v">{attachments.length}</div>
-                    <div className="muted">Local-first files tied to this document. Cloud sync runs in the background.</div>
+                    <div className="muted">{t("vault.attachedFilesSub", "Local-first files tied to this document. Cloud sync runs in the background.")}</div>
                   </div>
                 </div>
-                {item.reference ? <div className="stat-line"><span>Reference</span><span>{item.reference}</span></div> : null}
+                {item.reference ? <div className="stat-line"><span>{t("vault.reference", "Reference")}</span><span>{item.reference}</span></div> : null}
                 {item.note ? <p className="muted" style={{ marginTop: 10 }}>{item.note}</p> : null}
                 <div className="vault-upload-row">
                   <label className="btn-secondary vault-upload-btn">
-                    Upload Files
+                    {t("vault.uploadFiles", "Upload Files")}
                     <input
                       type="file"
                       multiple
@@ -502,12 +527,12 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
                       }}
                     />
                   </label>
-                  <span className="muted">PDF, image, or statement up to 2 MB each. Files save locally first, then sync to your Finwise cloud vault.</span>
+                  <span className="muted">{t("vault.uploadSub", "PDF, image, or statement up to 2 MB each. Files save locally first, then sync to your Finwise cloud vault.")}</span>
                 </div>
                 <div className="vault-files-block">
                   <div className="vault-files-head">
-                    <strong>Files in vault</strong>
-                    <span className="muted">{attachments.length ? `${attachments.length} file${attachments.length === 1 ? "" : "s"} attached` : "No files attached yet"}</span>
+                    <strong>{t("vault.filesInVault", "Files in Vault")}</strong>
+                    <span className="muted">{attachments.length ? `${attachments.length} ${t("vault.filesAttached", "file(s) attached")}` : t("vault.noFilesYet", "No files attached yet")}</span>
                   </div>
                   {attachments.length ? (
                     <div className="stack" style={{ marginTop: 10 }}>
@@ -519,47 +544,47 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
                             <div className="vault-sync-meta">
                               <span className={`sync-pill ${file.syncStatus || "local"}`}>
                                 {file.syncStatus === "synced"
-                                  ? "Synced"
+                                  ? t("vault.synced", "Synced")
                                   : file.syncStatus === "syncing"
-                                    ? "Syncing"
+                                    ? t("vault.syncing", "Syncing")
                                     : file.syncStatus === "error"
-                                      ? "Retry needed"
-                                      : "Saved locally"}
+                                      ? t("vault.retryNeeded", "Retry needed")
+                                      : t("vault.savedLocally", "Saved locally")}
                               </span>
                               {file.lastError ? <span className="muted">{file.lastError}</span> : null}
                             </div>
                           </div>
                           <div className="setting-row">
-                            <button className="tx-btn" onClick={() => openAttachment(file.id)}>Open</button>
+                            <button className="tx-btn" onClick={() => openAttachment(file.id)}>{t("vault.open", "Open")}</button>
                             {file.syncStatus !== "synced" ? (
                               <button
                                 className="tx-btn edit"
                                 onClick={() => queueSync(() => syncAttachment(item.id, file))}
                               >
-                                Retry
+                                {t("vault.retry", "Retry")}
                               </button>
                             ) : null}
-                            <button className="tx-btn del" onClick={() => removeAttachment(item.id, file.id)}>Delete</button>
+                            <button className="tx-btn del" onClick={() => removeAttachment(item.id, file.id)}>{t("common.delete", "Delete")}</button>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
                     <div className="vault-files-empty muted">
-                      Upload a PDF, image, or statement and it will appear here with Open and Delete actions.
+                      {t("vault.fileEmpty", "Upload a PDF, image, or statement and it will appear here with Open and Delete actions.")}
                     </div>
                   )}
                 </div>
                 <div className="setting-row" style={{ marginTop: 12, justifyContent: "flex-end" }}>
-                  <button className="tx-btn edit" onClick={() => editDoc(item)}>Edit</button>
-                  <button className="tx-btn del" onClick={() => removeDoc(item.id)}>Delete</button>
+                  <button className="tx-btn edit" onClick={() => editDoc(item)}>{t("common.edit", "Edit")}</button>
+                  <button className="tx-btn del" onClick={() => removeDoc(item.id)}>{t("common.delete", "Delete")}</button>
                 </div>
               </div>
             );
           }) : (
             <div className="section-card">
-              <h3>No documents yet</h3>
-              <p>Add policy renewals, tax proof packs, loan statements, investment references, and actual file uploads so Finwise can surface what needs attention before it becomes urgent.</p>
+              <h3>{t("vault.emptyTitle", "No documents yet")}</h3>
+              <p>{t("vault.emptyBody", "Add policy renewals, tax proof packs, loan statements, investment references, and actual file uploads so Finwise can surface what needs attention before it becomes urgent.")}</p>
             </div>
           )}
         </div>

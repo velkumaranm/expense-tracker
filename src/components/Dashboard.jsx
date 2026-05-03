@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 import { PIE_COLORS, INV_COLORS, INS_COLORS } from "../lib/constants";
 import { fmtINR } from "../lib/utils";
@@ -63,11 +62,28 @@ export default function Dashboard({
     subscriptionSummary.recurringCount > 0,
     vaultSummary.totalDocs > 0,
   ].filter(Boolean).length;
+  const profileLabels = {
+    salary: t("dashboard.profileSalary", "Salary"),
+    business: t("dashboard.profileBusiness", "Business"),
+    family: t("dashboard.profileFamily", "Family"),
+    student: t("dashboard.profileStudent", "Student"),
+  };
+  const householdLabels = {
+    personal: t("dashboard.modePersonal", "Personal"),
+    shared: t("dashboard.modeShared", "Shared"),
+    family: t("dashboard.modeFamily", "Family"),
+  };
+  const focusLabels = {
+    wealth: t("dashboard.focusWealth", "Wealth"),
+    stability: t("dashboard.focusStability", "Stability"),
+    retirement: t("dashboard.focusRetirement", "Retirement"),
+    "debt-free": t("dashboard.focusDebtFree", "Debt-free"),
+  };
   const firstMonthSteps = [
-    { done: totalTransactions > 0, title: "Capture your first cash flow", body: "Add salary plus 2-3 major expenses so the dashboard stops feeling generic.", action: onJumpToAdd, cta: "Add first entries" },
-    { done: goals.length > 0, title: "Name one near-term goal", body: "Even one active goal gives the planner and AI something concrete to optimize.", action: onJumpToGoals, cta: "Create a goal" },
-    { done: assetCount + liabilityCount > 0, title: "Complete the balance sheet", body: "Add at least one asset or liability so runway and wealth become real.", action: onJumpToNetWorth, cta: "Open net worth" },
-    { done: vaultSummary.totalDocs > 0, title: "Anchor a key document", body: "One policy or loan reminder makes the vault useful immediately.", action: onJumpToVault, cta: "Open vault" },
+    { done: totalTransactions > 0, title: t("dashboard.stepCashTitle", "Capture your first cash flow"), body: t("dashboard.stepCashBody", "Add salary plus 2-3 major expenses so the dashboard stops feeling generic."), action: onJumpToAdd, cta: t("dashboard.stepCashCta", "Add first entries") },
+    { done: goals.length > 0, title: t("dashboard.stepGoalTitle", "Name one near-term goal"), body: t("dashboard.stepGoalBody", "Even one active goal gives the planner and AI something concrete to optimize."), action: onJumpToGoals, cta: t("dashboard.stepGoalCta", "Create a goal") },
+    { done: assetCount + liabilityCount > 0, title: t("dashboard.stepWorthTitle", "Complete the balance sheet"), body: t("dashboard.stepWorthBody", "Add at least one asset or liability so runway and wealth become real."), action: onJumpToNetWorth, cta: t("dashboard.stepWorthCta", "Open net worth") },
+    { done: vaultSummary.totalDocs > 0, title: t("dashboard.stepVaultTitle", "Anchor a key document"), body: t("dashboard.stepVaultBody", "One policy or loan reminder makes the vault useful immediately."), action: onJumpToVault, cta: t("dashboard.openVault", "Open vault") },
   ];
 
   return (
@@ -75,7 +91,7 @@ export default function Dashboard({
       <div className="page-header">
         <div>
           <h1>{t("dashboard.title", "Dashboard")}</h1>
-          <p>{selectedMonth === "all" ? t("dashboard.subtitle", "Full financial system view") : `Monthly command center — ${selectedMonth}`}</p>
+          <p>{selectedMonth === "all" ? t("dashboard.subtitle", "Full financial system view") : `${t("dashboard.monthlyCommand", "Monthly command center")} - ${selectedMonth}`}</p>
         </div>
       </div>
 
@@ -87,76 +103,76 @@ export default function Dashboard({
             <div>
               <h3>{t("dashboard.setupTitle", "Get Finwise Fully Set Up")}</h3>
               <p style={{ marginBottom: 0 }}>
-                A few pieces of data will make the dashboards, AI, goals, and net worth views much more useful.
+                {t("dashboard.setupBody", "A few pieces of data will make the dashboards, AI, goals, and net worth views much more useful.")}
               </p>
             </div>
-            <span className="status-pill neutral">{setupScore}/5 complete</span>
+            <span className="status-pill neutral">{setupScore}/5 {t("dashboard.complete", "complete")}</span>
           </div>
           <div className="planner-grid" style={{ marginBottom: 12 }}>
             <div className="fg">
-              <label className="fl">Profile type</label>
+              <label className="fl">{t("dashboard.profileType", "Profile type")}</label>
               <select className="fs" value={onboardingState.profileType} onChange={(e) => setOnboardingState((prev) => ({ ...prev, profileType: e.target.value }))}>
-                {["salary", "business", "family", "student"].map((option) => <option key={option} value={option}>{option}</option>)}
+                {["salary", "business", "family", "student"].map((option) => <option key={option} value={option}>{profileLabels[option]}</option>)}
               </select>
             </div>
             <div className="fg">
-              <label className="fl">Household mode</label>
+              <label className="fl">{t("dashboard.householdMode", "Household mode")}</label>
               <select className="fs" value={onboardingState.householdMode} onChange={(e) => setOnboardingState((prev) => ({ ...prev, householdMode: e.target.value }))}>
-                {["personal", "shared", "family"].map((option) => <option key={option} value={option}>{option}</option>)}
+                {["personal", "shared", "family"].map((option) => <option key={option} value={option}>{householdLabels[option]}</option>)}
               </select>
             </div>
             <div className="fg">
-              <label className="fl">Primary focus</label>
+              <label className="fl">{t("dashboard.primaryFocus", "Primary focus")}</label>
               <select className="fs" value={onboardingState.primaryFocus} onChange={(e) => setOnboardingState((prev) => ({ ...prev, primaryFocus: e.target.value }))}>
-                {["wealth", "stability", "retirement", "debt-free"].map((option) => <option key={option} value={option}>{option}</option>)}
+                {["wealth", "stability", "retirement", "debt-free"].map((option) => <option key={option} value={option}>{focusLabels[option]}</option>)}
               </select>
             </div>
           </div>
           <div className="onboarding-grid">
             <div className="insight-item">
-              <strong>{totalTransactions > 0 ? "Transactions connected" : "Add your first transactions"}</strong>
-              <p>{totalTransactions > 0 ? `${totalTransactions} transaction${totalTransactions !== 1 ? "s" : ""} are already shaping your analytics.` : "Income, expenses, investments, and insurance make every other page smarter."}</p>
+              <strong>{totalTransactions > 0 ? t("dashboard.txConnected", "Transactions connected") : t("dashboard.addFirstTx", "Add your first transactions")}</strong>
+              <p>{totalTransactions > 0 ? `${totalTransactions} ${t("dashboard.txConnectedBody", "transaction(s) are already shaping your analytics.")}` : t("dashboard.addFirstTxBody", "Income, expenses, investments, and insurance make every other page smarter.")}</p>
               {!totalTransactions && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToAdd}>{t("dashboard.setupCtaAdd", "Add Transaction")}</button>}
             </div>
             <div className="insight-item">
-              <strong>{goals.length > 0 ? "Goals in motion" : "Create at least one goal"}</strong>
-              <p>{goals.length > 0 ? `${goals.length} goal${goals.length !== 1 ? "s are" : " is"} being tracked for progress and funding pace.` : "Goals turn your cash flow into a plan, not just a record of what already happened."}</p>
+              <strong>{goals.length > 0 ? t("dashboard.goalsMotion", "Goals in motion") : t("dashboard.createGoal", "Create at least one goal")}</strong>
+              <p>{goals.length > 0 ? `${goals.length} ${t("dashboard.goalsMotionBody", "goal(s) are being tracked for progress and funding pace.")}` : t("dashboard.createGoalBody", "Goals turn your cash flow into a plan, not just a record of what already happened.")}</p>
               {!goals.length && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToGoals}>{t("dashboard.setupCtaGoal", "Set a Goal")}</button>}
             </div>
             <div className="insight-item">
-              <strong>{assetCount + liabilityCount > 0 ? "Balance sheet started" : "Complete your net worth"}</strong>
-              <p>{assetCount + liabilityCount > 0 ? `${assetCount} asset${assetCount !== 1 ? "s" : ""} and ${liabilityCount} liabilit${liabilityCount === 1 ? "y" : "ies"} are already included.` : "Adding assets and liabilities makes runway, debt, and wealth diagnostics more realistic."}</p>
+              <strong>{assetCount + liabilityCount > 0 ? t("dashboard.balanceStarted", "Balance sheet started") : t("dashboard.completeNetWorth", "Complete your net worth")}</strong>
+              <p>{assetCount + liabilityCount > 0 ? `${assetCount} ${t("dashboard.assetCountLabel", "asset(s)")} / ${liabilityCount} ${t("dashboard.liabilityCountLabel", "liability/liabilities")} ${t("dashboard.balanceStartedBody", "are already included.")}` : t("dashboard.completeNetWorthBody", "Adding assets and liabilities makes runway, debt, and wealth diagnostics more realistic.")}</p>
               {!(assetCount + liabilityCount > 0) && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToNetWorth}>{t("dashboard.setupCtaAsset", "Add Assets")}</button>}
             </div>
             <div className="insight-item">
-              <strong>{subscriptionSummary.recurringCount ? "Recurring bills mapped" : "Mark your bills recurring"}</strong>
-              <p>{subscriptionSummary.recurringCount ? `${subscriptionSummary.recurringCount} recurring cash commitments are now feeding bill intelligence.` : "Recurring flags help Finwise build bill calendars, renewal insight, and subscription totals automatically."}</p>
-              {!subscriptionSummary.recurringCount && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToAdd}>Add recurring bill</button>}
+              <strong>{subscriptionSummary.recurringCount ? t("dashboard.recurringMapped", "Recurring bills mapped") : t("dashboard.markRecurring", "Mark your bills recurring")}</strong>
+              <p>{subscriptionSummary.recurringCount ? `${subscriptionSummary.recurringCount} ${t("dashboard.recurringMappedBody", "recurring cash commitments are now feeding bill intelligence.")}` : t("dashboard.markRecurringBody", "Recurring flags help Finwise build bill calendars, renewal insight, and subscription totals automatically.")}</p>
+              {!subscriptionSummary.recurringCount && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToAdd}>{t("dashboard.addRecurringBill", "Add recurring bill")}</button>}
             </div>
             <div className="insight-item">
-              <strong>{vaultSummary.totalDocs ? "Vault reminders active" : "Add your first document reminder"}</strong>
-              <p>{vaultSummary.totalDocs ? `${vaultSummary.totalDocs} document reminder${vaultSummary.totalDocs !== 1 ? "s are" : " is"} now tracked inside the vault.` : "Policies, tax packs, and loan papers become much more useful when renewal dates live in the same system."}</p>
-              {!vaultSummary.totalDocs && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToVault}>Open vault</button>}
+              <strong>{vaultSummary.totalDocs ? t("dashboard.vaultActive", "Vault reminders active") : t("dashboard.addDocReminder", "Add your first document reminder")}</strong>
+              <p>{vaultSummary.totalDocs ? `${vaultSummary.totalDocs} ${t("dashboard.vaultActiveBody", "document reminder(s) are now tracked inside the vault.")}` : t("dashboard.addDocReminderBody", "Policies, tax packs, and loan papers become much more useful when renewal dates live in the same system.")}</p>
+              {!vaultSummary.totalDocs && <button className="btn-secondary" style={{ marginTop: 10 }} onClick={onJumpToVault}>{t("dashboard.openVault", "Open vault")}</button>}
             </div>
           </div>
           {!totalTransactions && (
             <div className="section-card" style={{ marginTop: 12, marginBottom: 0, background: "var(--card2)" }}>
               <div className="section-head" style={{ marginBottom: 10 }}>
                 <div>
-                  <h3>First Month Guided Flow</h3>
-                  <p style={{ marginBottom: 0 }}>A simple month-one sequence so new users land in momentum instead of an empty system.</p>
+                  <h3>{t("dashboard.firstMonthFlow", "First Month Guided Flow")}</h3>
+                  <p style={{ marginBottom: 0 }}>{t("dashboard.firstMonthFlowBody", "A simple month-one sequence so new users land in momentum instead of an empty system.")}</p>
                 </div>
-                <button className="btn-secondary" onClick={onLoadDemo}>Load Demo Mode</button>
+                <button className="btn-secondary" onClick={onLoadDemo}>{t("dashboard.loadDemo", "Load Demo Mode")}</button>
               </div>
               <div className="stack">
                 {firstMonthSteps.map((step, index) => (
                   <div key={step.title} className="timeline-item">
-                    <div className="timeline-date">{step.done ? "Done" : `Step ${index + 1}`}</div>
+                    <div className="timeline-date">{step.done ? t("dashboard.done", "Done") : `${t("dashboard.step", "Step")} ${index + 1}`}</div>
                     <div className="timeline-body">
                       <strong>{step.title}</strong>
                       <p className="muted" style={{ marginTop: 4 }}>{step.body}</p>
                     </div>
-                    {!step.done ? <button className="btn-secondary" onClick={step.action}>{step.cta}</button> : <span className="status-pill verified">Completed</span>}
+                    {!step.done ? <button className="btn-secondary" onClick={step.action}>{step.cta}</button> : <span className="status-pill verified">{t("dashboard.completed", "Completed")}</span>}
                   </div>
                 ))}
               </div>
@@ -235,8 +251,8 @@ export default function Dashboard({
             <div className="budget-fill" style={{ width: `${budgetProgress}%`, background: budgetColor }} />
           </div>
           <div className="split-row" style={{ marginTop: 8, fontSize: 11, color: "var(--text3)" }}>
-            <span>{budgetProgress.toFixed(0)}% used</span>
-            <span>{totals.expense <= budgetNum ? `${fmtINR(budgetNum - totals.expense)} remaining` : `${fmtINR(totals.expense - budgetNum)} over budget`}</span>
+            <span>{budgetProgress.toFixed(0)}% {t("dashboard.budgetUsed", "used")}</span>
+            <span>{totals.expense <= budgetNum ? `${fmtINR(budgetNum - totals.expense)} ${t("dashboard.remaining", "remaining")}` : `${fmtINR(totals.expense - budgetNum)} ${t("dashboard.overBudget", "over budget")}`}</span>
           </div>
         </div>
       )}
@@ -250,12 +266,16 @@ export default function Dashboard({
               <XAxis dataKey="label" tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip content={<AreaTip />} />
-              <Legend />
-              <Bar dataKey="income" name="Income" fill="#34D399" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="expense" name="Expense" fill="#F87171" radius={[6, 6, 0, 0]} />
-              <Bar dataKey="savings" name="Savings" fill="#C8A96E" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="income" name={t("dashboard.incomeLabel", "Income")} fill="#34D399" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="expense" name={t("dashboard.expensesLabel", "Expenses")} fill="#F87171" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="savings" name={t("dashboard.savingsLabel", "Savings")} fill="#C8A96E" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+          <div className="chart-legend-compact">
+            <span><i style={{ background: "#34D399" }} />{t("dashboard.incomeLabel", "Income")}</span>
+            <span><i style={{ background: "#F87171" }} />{t("dashboard.expensesLabel", "Expenses")}</span>
+            <span><i style={{ background: "#C8A96E" }} />{t("dashboard.savingsLabel", "Savings")}</span>
+          </div>
         </div>
 
         <div className="chart-card chart-span-5">
@@ -278,10 +298,10 @@ export default function Dashboard({
                 ))}
               </div>
             </div>
-          ) : <div className="empty-state"><p>No expense data for this period yet.</p></div>}
+          ) : <div className="empty-state"><p>{t("dashboard.noExpenseData", "No expense data for this period yet.")}</p></div>}
         </div>
 
-        <div className="chart-card chart-span-6">
+        <div className="chart-card chart-span-6 dashboard-fixed-card dashboard-attention-card">
           <div className="chart-title">{t("dashboard.attentionCenter", "Attention Center")}</div>
           <div className="insight-list">
             {alerts.length ? alerts.map((alert, idx) => (
@@ -298,9 +318,9 @@ export default function Dashboard({
           </div>
         </div>
 
-        <div className="chart-card chart-span-6">
+        <div className="chart-card chart-span-6 dashboard-fixed-card dashboard-diagnostics-card">
           <div className="chart-title">{t("dashboard.quickDiagnostics", "Quick Diagnostics")}</div>
-          <div className="mini-grid">
+          <div className="mini-grid dashboard-mini-grid">
             <div className="mini-card">
               <div className="k">{t("dashboard.topExpense", "Top Expense")}</div>
               <div className="v">{topCategories[0] ? fmtINR(topCategories[0].value) : "—"}</div>
@@ -317,95 +337,97 @@ export default function Dashboard({
               <div className="muted">{unusualTransactions.length ? t("dashboard.needsReview", "Needs review") : t("dashboard.nothingFlagged", "Nothing flagged")}</div>
             </div>
           </div>
-          {(invPieData.length > 0 || insPieData.length > 0) && (
-            <div className="two-col" style={{ marginTop: 14 }}>
-              {invPieData.length > 0 && (
-                <div className="section-card" style={{ marginBottom: 0 }}>
-                  <div className="chart-title" style={{ color: "var(--invest)" }}>{t("dashboard.investAlloc", "Investment Allocation")}</div>
-                  {invPieData.slice(0, 5).map((item, i) => (
-                    <div key={item.name} className="stat-line">
-                      <span>{item.name}</span>
-                      <span style={{ color: INV_COLORS[i % INV_COLORS.length] }}>{fmtINR(item.value)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {insPieData.length > 0 && (
-                <div className="section-card" style={{ marginBottom: 0 }}>
-                  <div className="chart-title" style={{ color: "var(--insure)" }}>{t("dashboard.insuranceLoad", "Insurance Load")}</div>
-                  {insPieData.slice(0, 5).map((item, i) => (
-                    <div key={item.name} className="stat-line">
-                      <span>{item.name}</span>
-                      <span style={{ color: INS_COLORS[i % INS_COLORS.length] }}>{fmtINR(item.value)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Subscription & Bill Intelligence</div>
+        {invPieData.length > 0 && (
+          <div className="chart-card chart-span-6 dashboard-fixed-card dashboard-list-card">
+            <div className="chart-title" style={{ color: "var(--invest)" }}>{t("dashboard.investAlloc", "Investment Allocation")}</div>
+            <div className="dashboard-stat-list">
+              {invPieData.slice(0, 5).map((item, i) => (
+                <div key={item.name} className="stat-line">
+                  <span>{item.name}</span>
+                  <span style={{ color: INV_COLORS[i % INV_COLORS.length] }}>{fmtINR(item.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {insPieData.length > 0 && (
+          <div className="chart-card chart-span-6 dashboard-fixed-card dashboard-list-card">
+            <div className="chart-title" style={{ color: "var(--insure)" }}>{t("dashboard.insuranceLoad", "Insurance Load")}</div>
+            <div className="dashboard-stat-list">
+              {insPieData.slice(0, 5).map((item, i) => (
+                <div key={item.name} className="stat-line">
+                  <span>{item.name}</span>
+                  <span style={{ color: INS_COLORS[i % INS_COLORS.length] }}>{fmtINR(item.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="chart-card chart-span-4 dashboard-fixed-card dashboard-bento-card">
+          <div className="chart-title">{t("dashboard.subscriptionIntelligence", "Subscription & Bill Intelligence")}</div>
           <div className="mini-grid">
             <div className="mini-card">
-              <div className="k">Monthly subscriptions</div>
+              <div className="k">{t("dashboard.monthlySubscriptions", "Monthly subscriptions")}</div>
               <div className="v" style={{ color: "var(--accent)" }}>{fmtINR(subscriptionSummary.monthly)}</div>
-              <div className="muted">{subscriptionSummary.subscriptionCount} tracked subscription{subscriptionSummary.subscriptionCount === 1 ? "" : "s"} annualizing to {fmtINR(subscriptionSummary.annual)}.</div>
+              <div className="muted">{subscriptionSummary.subscriptionCount} {t("dashboard.subscriptionCountSub", "tracked subscription(s) annualizing to")} {fmtINR(subscriptionSummary.annual)}.</div>
             </div>
             <div className="mini-card">
-              <div className="k">Annual recurring load</div>
+              <div className="k">{t("dashboard.annualRecurringLoad", "Annual recurring load")}</div>
               <div className="v">{fmtINR(subscriptionSummary.recurringAnnual)}</div>
-              <div className="muted">Across bills, EMIs, and subscriptions marked recurring.</div>
+              <div className="muted">{t("dashboard.recurringLoadSub", "Across bills, EMIs, and subscriptions marked recurring.")}</div>
             </div>
             <div className="mini-card">
-              <div className="k">Next due items</div>
+              <div className="k">{t("dashboard.nextDueItems", "Next due items")}</div>
               <div className="v">{subscriptionSummary.upcomingBills.length}</div>
               <div className="muted">
-                {subscriptionSummary.upcomingBills.slice(0, 2).map((bill) => `${bill.category} ${bill.nextDate.toLocaleDateString("en-IN")}`).join(" • ") || "No recurring due dates yet."}
+                {subscriptionSummary.upcomingBills.slice(0, 2).map((bill) => `${bill.category} ${bill.nextDate.toLocaleDateString("en-IN")}`).join(" • ") || t("dashboard.noRecurringDue", "No recurring due dates yet.")}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Planner Pulse</div>
+        <div className="chart-card chart-span-4 dashboard-fixed-card dashboard-bento-card">
+          <div className="chart-title">{t("dashboard.plannerPulse", "Planner Pulse")}</div>
           <div className="mini-grid">
             <div className="mini-card">
-              <div className="k">Emergency fund gap</div>
+              <div className="k">{t("dashboard.emergencyFundGap", "Emergency fund gap")}</div>
               <div className="v" style={{ color: plannerSummary.emergencyGap > 0 ? "var(--accent)" : "var(--income)" }}>{fmtINR(plannerSummary.emergencyGap)}</div>
-              <div className="muted">{plannerSummary.emergencyCoverageMonths.toFixed(1)} months of cover is already in place.</div>
+              <div className="muted">{plannerSummary.emergencyCoverageMonths.toFixed(1)} {t("dashboard.monthsCoverSub", "months of cover is already in place.")}</div>
             </div>
             <div className="mini-card">
-              <div className="k">Retirement gap</div>
+              <div className="k">{t("dashboard.retirementGap", "Retirement gap")}</div>
               <div className="v" style={{ color: plannerSummary.retirementGap > 0 ? "var(--accent)" : "var(--income)" }}>{fmtINR(plannerSummary.retirementGap)}</div>
-              <div className="muted">Projected corpus versus inflation-adjusted retirement target.</div>
+              <div className="muted">{t("dashboard.retirementGapSub", "Projected corpus versus inflation-adjusted retirement target.")}</div>
             </div>
             <div className="mini-card">
-              <div className="k">EMI stress</div>
+              <div className="k">{t("dashboard.emiStress", "EMI stress")}</div>
               <div className="v" style={{ color: plannerSummary.emiStress > 35 ? "var(--expense)" : "var(--accent)" }}>{plannerSummary.emiStress ? `${plannerSummary.emiStress.toFixed(1)}%` : "—"}</div>
-              <div className="muted">Share of income currently consumed by EMI commitments.</div>
+              <div className="muted">{t("dashboard.emiStressSub", "Share of income currently consumed by EMI commitments.")}</div>
             </div>
           </div>
         </div>
 
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Vault Reminders</div>
+        <div className="chart-card chart-span-4 dashboard-fixed-card dashboard-bento-card">
+          <div className="chart-title">{t("dashboard.vaultReminders", "Vault Reminders")}</div>
           <div className="mini-grid">
             <div className="mini-card">
-              <div className="k">Tracked docs</div>
+              <div className="k">{t("dashboard.trackedDocs", "Tracked docs")}</div>
               <div className="v">{vaultSummary.totalDocs}</div>
-              <div className="muted">Insurance, tax, loan, and investment references inside Finwise.</div>
+              <div className="muted">{t("dashboard.trackedDocsSub", "Insurance, tax, loan, and investment references inside Finwise.")}</div>
             </div>
             <div className="mini-card">
-              <div className="k">Due soon</div>
+              <div className="k">{t("dashboard.dueSoon", "Due soon")}</div>
               <div className="v" style={{ color: vaultSummary.dueSoon ? "var(--accent)" : "var(--income)" }}>{vaultSummary.dueSoon}</div>
-              <div className="muted">Renewals whose reminder window is already open.</div>
+              <div className="muted">{t("dashboard.dueSoonSub", "Renewals whose reminder window is already open.")}</div>
             </div>
             <div className="mini-card">
-              <div className="k">Expired</div>
+              <div className="k">{t("dashboard.expired", "Expired")}</div>
               <div className="v" style={{ color: vaultSummary.expired ? "var(--expense)" : "var(--income)" }}>{vaultSummary.expired}</div>
-              <div className="muted">Documents or policies that now need immediate attention.</div>
+              <div className="muted">{t("dashboard.expiredSub", "Documents or policies that now need immediate attention.")}</div>
             </div>
           </div>
         </div>

@@ -164,51 +164,80 @@ export default function NetWorthTracker({
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("wealth.cashReserve", "Tracked Cash Reserve")}</div>
           <div className="sc-value" style={{ color: "var(--income)" }}>{fmtINR(trackedCash)}</div>
-          <div className="sc-sub">Income minus expenses, insurance, and investment outflow.</div>
+          <div className="sc-sub">{t("wealth.cashReserveSub", "Income minus expenses, insurance, and investment outflow.")}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("wealth.trackedInvestments", "Tracked Investments")}</div>
           <div className="sc-value" style={{ color: "var(--invest)" }}>{fmtINR(trackedInvestments)}</div>
-          <div className="sc-sub">Non-market investments plus live-valued market holdings.</div>
+          <div className="sc-sub">{t("wealth.trackedInvestmentsSub", "Non-market investments plus live-valued market holdings.")}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("wealth.liquidityBuffer", "Liquidity Buffer")}</div>
           <div className="sc-value" style={{ color: "var(--accent)" }}>{fmtINR(liquidAssets)}</div>
-          <div className="sc-sub">Cash-like assets available without liquidating long-term holdings.</div>
+          <div className="sc-sub">{t("wealth.liquidityBufferSub", "Cash-like assets available without liquidating long-term holdings.")}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("wealth.netWorthLabel", "Net Worth")}</div>
           <div className="sc-value" style={{ color: netWorth >= 0 ? "var(--income)" : "var(--expense)" }}>{fmtINR(netWorth)}</div>
-          <div className="sc-sub">All tracked assets minus liabilities.</div>
+          <div className="sc-sub">{t("wealth.netWorthSub", "All tracked assets minus liabilities.")}</div>
         </div>
       </div>
 
       <div className="charts-grid">
-        <div className="chart-card chart-span-5">
-          <div className="chart-title">{t("wealth.wealthMix", "Wealth Mix")}</div>
-          {wealthMix.length ? (
-            <div className="pie-row">
-              <div style={{ width: 180, height: 180 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={wealthMix} dataKey="value" cx="50%" cy="50%" innerRadius={42} outerRadius={72} paddingAngle={2}>
-                      {wealthMix.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(value) => fmtINR(Number(value))} />
-                  </PieChart>
-                </ResponsiveContainer>
+        <div className="stack chart-span-5">
+          <div className="chart-card">
+            <div className="chart-title">{t("wealth.wealthMix", "Wealth Mix")}</div>
+            {wealthMix.length ? (
+              <div className="pie-row">
+                <div style={{ width: 180, height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={wealthMix} dataKey="value" cx="50%" cy="50%" innerRadius={42} outerRadius={72} paddingAngle={2}>
+                        {wealthMix.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(value) => fmtINR(Number(value))} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="pie-legend">
+                  {wealthMix.map((item, i) => (
+                    <div key={item.name} className="pie-legend-item">
+                      <span className="pie-dot" style={{ background: WEALTH_COLORS[i % WEALTH_COLORS.length] }} />
+                      <span>{item.name}</span>
+                      <span className="pie-legend-val">{fmtINR(item.value)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="pie-legend">
-                {wealthMix.map((item, i) => (
-                  <div key={item.name} className="pie-legend-item">
-                    <span className="pie-dot" style={{ background: WEALTH_COLORS[i % WEALTH_COLORS.length] }} />
-                    <span>{item.name}</span>
-                    <span className="pie-legend-val">{fmtINR(item.value)}</span>
-                  </div>
-                ))}
+            ) : <p>{t("wealth.noComponents", "No wealth components recorded yet.")}</p>}
+          </div>
+
+          <div className="chart-card" style={{ alignSelf: "start", height: "auto" }}>
+            <div className="chart-title">{t("wealth.allocationByClass", "Allocation By Asset Class")}</div>
+            {allocationByKind.length ? (
+              <div className="pie-row">
+                <div style={{ width: 170, height: 170 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={allocationByKind} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={68} paddingAngle={2}>
+                        {allocationByKind.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(value) => fmtINR(Number(value))} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="pie-legend">
+                  {allocationByKind.map((item, i) => (
+                    <div key={item.name} className="pie-legend-item">
+                      <span className="pie-dot" style={{ background: WEALTH_COLORS[i % WEALTH_COLORS.length] }} />
+                      <span>{item.name}</span>
+                      <span className="pie-legend-val">{fmtINR(item.value)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : <p>No wealth components recorded yet.</p>}
+            ) : <p>{t("market.noMarketHoldings", "No market holdings added yet.")}</p>}
+          </div>
         </div>
 
         <div className="chart-card chart-span-7">
@@ -217,36 +246,36 @@ export default function NetWorthTracker({
             <div className="mini-card">
               <div className="k">{t("wealth.manualAssets", "Manual Assets")}</div>
               <div className="v">{fmtINR(assetTotal)}</div>
-              <div className="muted">Property, gold, retirement, and other self-entered assets.</div>
+              <div className="muted">{t("wealth.manualAssetsSub", "Property, gold, retirement, and other self-entered assets.")}</div>
             </div>
             <div className="mini-card">
               <div className="k">{t("wealth.liabilities", "Liabilities")}</div>
               <div className="v" style={{ color: "var(--expense)" }}>{fmtINR(liabilityTotal)}</div>
-              <div className="muted">Loans, cards, tax dues, and other obligations.</div>
+              <div className="muted">{t("wealth.liabilitiesSub", "Loans, cards, tax dues, and other obligations.")}</div>
             </div>
             <div className="mini-card">
               <div className="k">{t("wealth.debtRatio", "Debt Ratio")}</div>
               <div className="v" style={{ color: debtRatio > 0.45 ? "var(--expense)" : "var(--accent)" }}>
                 {(debtRatio * 100).toFixed(0)}%
               </div>
-              <div className="muted">Liabilities as a share of total asset base.</div>
+              <div className="muted">{t("wealth.debtRatioSub", "Liabilities as a share of total asset base.")}</div>
             </div>
           </div>
           <div className="insight-list" style={{ marginTop: 14 }}>
             <div className="insight-item">
-              <strong>Balance sheet read</strong>
+              <strong>{t("wealth.balanceSheetRead", "Balance sheet read")}</strong>
               <p>
                 {liabilityTotal > assetTotal + trackedCash + trackedInvestments
-                  ? "Liabilities are outweighing asset buildup. Prioritize debt reduction before adding new risk."
-                  : "Assets are still ahead of liabilities. The next premium move is improving liquidity and diversification quality."}
+                  ? t("wealth.balanceSheetDebtWarning", "Liabilities are outweighing asset buildup. Prioritize debt reduction before adding new risk.")
+                  : t("wealth.balanceSheetHealthy", "Assets are still ahead of liabilities. The next premium move is improving liquidity and diversification quality.")}
               </p>
             </div>
             <div className="insight-item">
-              <strong>Liquidity note</strong>
+              <strong>{t("wealth.liquidityNote", "Liquidity note")}</strong>
               <p>
                 {liquidAssets > liabilityTotal
-                  ? "Liquid reserves are healthy relative to debt, which gives you flexibility during shocks."
-                  : "Liquidity is thinner than total obligations. Building accessible cash should stay near the top of the plan."}
+                  ? t("wealth.liquidityHealthy", "Liquid reserves are healthy relative to debt, which gives you flexibility during shocks.")
+                  : t("wealth.liquidityThin", "Liquidity is thinner than total obligations. Building accessible cash should stay near the top of the plan.")}
               </p>
             </div>
           </div>
@@ -266,117 +295,100 @@ export default function NetWorthTracker({
       />
 
       <div className="charts-grid" style={{ marginTop: 16 }}>
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Portfolio Return Signal</div>
-          <div className="mini-grid">
-            <div className="mini-card">
-              <div className="k">Invested base</div>
-              <div className="v">{fmtINR(portfolioInvestedValue)}</div>
-              <div className="muted">Capital currently committed to tracked market holdings.</div>
-            </div>
-            <div className="mini-card">
-              <div className="k">Unrealized return</div>
-              <div className="v" style={{ color: portfolioGainLoss >= 0 ? "var(--income)" : "var(--expense)" }}>
-                {portfolioGainLoss >= 0 ? "+" : "-"}{fmtINR(Math.abs(portfolioGainLoss))}
+        <div className="stack chart-span-6">
+          <div className="chart-card">
+            <div className="chart-title">{t("wealth.portfolioReturnSignal", "Portfolio Return Signal")}</div>
+            <div className="mini-grid">
+              <div className="mini-card">
+                <div className="k">{t("wealth.investedBase", "Invested base")}</div>
+                <div className="v">{fmtINR(portfolioInvestedValue)}</div>
+                <div className="muted">{t("wealth.investedBaseSub", "Capital currently committed to tracked market holdings.")}</div>
               </div>
-              <div className="muted">Current mark-to-market difference versus invested cost.</div>
-            </div>
-            <div className="mini-card">
-              <div className="k">XIRR-style estimate</div>
-              <div className="v" style={{ color: (xirrEstimate || 0) >= 0 ? "var(--invest)" : "var(--expense)" }}>
-                {xirrEstimate == null ? "Need more dates" : fmtPct(xirrEstimate)}
-              </div>
-              <div className="muted">Estimated annualized return based on current holding dates and values.</div>
-            </div>
-            <div className="mini-card">
-              <div className="k">CAGR estimate</div>
-              <div className="v" style={{ color: (cagrEstimate || 0) >= 0 ? "var(--invest)" : "var(--expense)" }}>
-                {cagrEstimate == null ? "Need more history" : fmtPct(cagrEstimate)}
-              </div>
-              <div className="muted">Compounded annual growth estimate from invested base and holding age.</div>
-            </div>
-            <div className="mini-card">
-              <div className="k">Monthly SIP flow</div>
-              <div className="v">{fmtINR(monthlySip)}</div>
-              <div className="muted">Recurring contributions explicitly mapped to holdings.</div>
-            </div>
-            <div className="mini-card">
-              <div className="k">Realized gains</div>
-              <div className="v" style={{ color: realizedGains >= 0 ? "var(--income)" : "var(--expense)" }}>{fmtINR(realizedGains)}</div>
-              <div className="muted">Closed-profit notes tracked alongside the live book.</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Allocation By Asset Class</div>
-          {allocationByKind.length ? (
-            <div className="pie-row">
-              <div style={{ width: 170, height: 170 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={allocationByKind} dataKey="value" cx="50%" cy="50%" innerRadius={38} outerRadius={68} paddingAngle={2}>
-                      {allocationByKind.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(value) => fmtINR(Number(value))} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="pie-legend">
-                {allocationByKind.map((item, i) => (
-                  <div key={item.name} className="pie-legend-item">
-                    <span className="pie-dot" style={{ background: WEALTH_COLORS[i % WEALTH_COLORS.length] }} />
-                    <span>{item.name}</span>
-                    <span className="pie-legend-val">{fmtINR(item.value)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : <p>No market holdings added yet.</p>}
-        </div>
-
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Allocation By Geography</div>
-          <div className="mini-grid">
-            {allocationByRegion.length ? allocationByRegion.map((item) => (
-              <div key={item.name} className="mini-card">
-                <div className="k">{item.name}</div>
-                <div className="v">{fmtINR(item.value)}</div>
-                <div className="muted">
-                  {trackedInvestments > 0 ? `${((item.value / Math.max(trackedInvestments, 1)) * 100).toFixed(1)}% of tracked investments.` : "No tracked investment base yet."}
+              <div className="mini-card">
+                <div className="k">{t("wealth.unrealizedReturn", "Unrealized return")}</div>
+                <div className="v" style={{ color: portfolioGainLoss >= 0 ? "var(--income)" : "var(--expense)" }}>
+                  {portfolioGainLoss >= 0 ? "+" : "-"}{fmtINR(Math.abs(portfolioGainLoss))}
                 </div>
+                <div className="muted">{t("wealth.unrealizedReturnSub", "Current mark-to-market difference versus invested cost.")}</div>
               </div>
-            )) : (
               <div className="mini-card">
-                <div className="k">Portfolio breadth</div>
-                <div className="v">—</div>
-                <div className="muted">Add Indian or global holdings to compare regional exposure.</div>
+                <div className="k">{t("wealth.xirrEstimate", "XIRR-style estimate")}</div>
+                <div className="v" style={{ color: (xirrEstimate || 0) >= 0 ? "var(--invest)" : "var(--expense)" }}>
+                  {xirrEstimate == null ? t("wealth.needMoreDates", "Need more dates") : fmtPct(xirrEstimate)}
+                </div>
+                <div className="muted">{t("wealth.xirrEstimateSub", "Estimated annualized return based on current holding dates and values.")}</div>
               </div>
-            )}
-            <div className="mini-card">
-              <div className="k">Tracking depth</div>
-              <div className="v">{holdings.length}</div>
-              <div className="muted">{investmentTransactions.length ? `${(recurringInvestmentRatio * 100).toFixed(0)}% of investment transactions are mirrored by tracked holdings.` : "No investment transactions have been recorded yet."}</div>
+            </div>
+          </div>
+
+          <div className="chart-card">
+            <div className="chart-title">{t("wealth.growthFlows", "Growth & Flows")}</div>
+            <div className="mini-grid">
+              <div className="mini-card">
+                <div className="k">{t("wealth.cagrEstimate", "CAGR estimate")}</div>
+                <div className="v" style={{ color: (cagrEstimate || 0) >= 0 ? "var(--invest)" : "var(--expense)" }}>
+                  {cagrEstimate == null ? t("analytics.needHistory", "Need more history") : fmtPct(cagrEstimate)}
+                </div>
+                <div className="muted">{t("wealth.cagrEstimateSub", "Compounded annual growth estimate from invested base and holding age.")}</div>
+              </div>
+              <div className="mini-card">
+                <div className="k">{t("wealth.monthlySipFlow", "Monthly SIP flow")}</div>
+                <div className="v">{fmtINR(monthlySip)}</div>
+                <div className="muted">{t("wealth.monthlySipFlowSub", "Recurring contributions explicitly mapped to holdings.")}</div>
+              </div>
+              <div className="mini-card">
+                <div className="k">{t("wealth.realizedGains", "Realized gains")}</div>
+                <div className="v" style={{ color: realizedGains >= 0 ? "var(--income)" : "var(--expense)" }}>{fmtINR(realizedGains)}</div>
+                <div className="muted">{t("wealth.realizedGainsSub", "Closed-profit notes tracked alongside the live book.")}</div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="chart-card chart-span-4">
-          <div className="chart-title">Sector Split</div>
-          <div className="mini-grid">
-            {sectorSplit.length ? sectorSplit.map((item) => (
-              <div key={item.name} className="mini-card">
-                <div className="k">{item.name}</div>
-                <div className="v">{fmtINR(item.value)}</div>
-                <div className="muted">Tracked sector concentration snapshot.</div>
-              </div>
-            )) : (
+        <div className="stack chart-span-6">
+          <div className="chart-card">
+            <div className="chart-title">{t("wealth.portfolioBreadth", "Portfolio Breadth")}</div>
+            <div className="mini-grid">
+              {allocationByRegion.length ? allocationByRegion.map((item) => (
+                <div key={item.name} className="mini-card">
+                  <div className="k">{item.name}</div>
+                  <div className="v">{fmtINR(item.value)}</div>
+                  <div className="muted">
+                    {trackedInvestments > 0 ? `${((item.value / Math.max(trackedInvestments, 1)) * 100).toFixed(1)}% ${t("wealth.ofTrackedInvestments", "of tracked investments.")}` : t("wealth.noTrackedInvestmentBase", "No tracked investment base yet.")}
+                  </div>
+                </div>
+              )) : (
+                <div className="mini-card">
+                  <div className="k">{t("wealth.portfolioBreadth", "Portfolio breadth")}</div>
+                  <div className="v">—</div>
+                  <div className="muted">{t("wealth.portfolioBreadthSub", "Add Indian or global holdings to compare regional exposure.")}</div>
+                </div>
+              )}
               <div className="mini-card">
-                <div className="k">Sectors</div>
-                <div className="v">—</div>
-                <div className="muted">Add sectors in holdings to compare concentration across themes.</div>
+                <div className="k">{t("wealth.trackingDepth", "Tracking depth")}</div>
+                <div className="v">{holdings.length}</div>
+                <div className="muted">{investmentTransactions.length ? `${(recurringInvestmentRatio * 100).toFixed(0)}% ${t("wealth.trackingDepthSub", "of investment transactions are mirrored by tracked holdings.")}` : t("wealth.noInvestmentTransactions", "No investment transactions have been recorded yet.")}</div>
               </div>
-            )}
+            </div>
+          </div>
+
+          <div className="chart-card">
+            <div className="chart-title">{t("wealth.sectorSplit", "Sector Split")}</div>
+            <div className="mini-grid">
+              {sectorSplit.length ? sectorSplit.map((item) => (
+                <div key={item.name} className="mini-card">
+                  <div className="k">{item.name}</div>
+                  <div className="v">{fmtINR(item.value)}</div>
+                  <div className="muted">{t("wealth.sectorSplitSub", "Tracked sector concentration snapshot.")}</div>
+                </div>
+              )) : (
+                <div className="mini-card">
+                  <div className="k">{t("wealth.sectors", "Sectors")}</div>
+                  <div className="v">—</div>
+                  <div className="muted">{t("wealth.sectorsEmptySub", "Add sectors in holdings to compare concentration across themes.")}</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -384,20 +396,20 @@ export default function NetWorthTracker({
       <div className="section-card" style={{ marginTop: 12 }}>
         <div className="section-head" style={{ marginBottom: 10 }}>
           <div>
-            <h3>Rebalance Hints</h3>
-            <p style={{ marginBottom: 0 }}>Soft guidance based on concentration and any target weights you saved per holding.</p>
+            <h3>{t("wealth.rebalanceHints", "Rebalance Hints")}</h3>
+            <p style={{ marginBottom: 0 }}>{t("wealth.rebalanceHintsSub", "Soft guidance based on concentration and any target weights you saved per holding.")}</p>
           </div>
         </div>
         <div className="stack">
           {rebalanceHints.length ? rebalanceHints.map((hint) => (
             <div key={hint} className="insight-item">
-              <strong>Portfolio note</strong>
+              <strong>{t("wealth.portfolioNote", "Portfolio note")}</strong>
               <p>{hint}</p>
             </div>
           )) : (
             <div className="insight-item">
-              <strong>Balanced enough for now</strong>
-              <p>No major concentration or target-weight drift is standing out from the tracked holdings set.</p>
+              <strong>{t("wealth.balancedEnough", "Balanced enough for now")}</strong>
+              <p>{t("wealth.balancedEnoughSub", "No major concentration or target-weight drift is standing out from the tracked holdings set.")}</p>
             </div>
           )}
         </div>
@@ -407,7 +419,7 @@ export default function NetWorthTracker({
         <div className="stack">
           <div className="form-card">
             <div style={{ marginBottom: 14 }}>
-              <label className="fl" style={{ marginBottom: 8, display: "block" }}>Starter Assets</label>
+              <label className="fl" style={{ marginBottom: 8, display: "block" }}>{t("wealth.starterAssets", "Starter Assets")}</label>
               <div className="filter-strip" style={{ marginBottom: 0 }}>
                 {ASSET_TEMPLATES.map((template) => (
                   <button key={template.name} className="filter-chip" onClick={() => setAssetForm(template)}>
@@ -418,17 +430,19 @@ export default function NetWorthTracker({
             </div>
             <div className="form-grid">
               <div className="fg full">
-                <label className="fl">Add Asset</label>
-                <input className="fi" placeholder="Emergency fund, bank FD, gold, property..." value={assetForm.name} onChange={(e) => setAssetForm((f) => ({ ...f, name: e.target.value }))} />
+                <label className="fl">{t("wealth.addAsset", "Add Asset")}</label>
+                <input className="fi" placeholder={t("wealth.assetPlaceholder", "Emergency fund, bank FD, gold, property...")} value={assetForm.name} onChange={(e) => setAssetForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
               <div className="fg">
-                <label className="fl">Type</label>
+                <label className="fl">{t("common.type", "Type")}</label>
                 <select className="fs" value={assetForm.type} onChange={(e) => setAssetForm((f) => ({ ...f, type: e.target.value }))}>
-                  {["Cash", "Property", "Gold", "Vehicle", "Retirement", "Other"].map((x) => <option key={x}>{x}</option>)}
+                  {["Cash", "Property", "Gold", "Vehicle", "Retirement", "Other"].map((x) => (
+                    <option key={x} value={x}>{t(`wealth.assetType.${x}`, x)}</option>
+                  ))}
                 </select>
               </div>
               <div className="fg">
-                <label className="fl">Value</label>
+                <label className="fl">{t("common.value", "Value")}</label>
                 <input className="fi" type="number" value={assetForm.value} onChange={(e) => setAssetForm((f) => ({ ...f, value: e.target.value }))} />
               </div>
               <div className="fg full">
@@ -459,7 +473,7 @@ export default function NetWorthTracker({
         <div className="stack">
           <div className="form-card">
             <div style={{ marginBottom: 14 }}>
-              <label className="fl" style={{ marginBottom: 8, display: "block" }}>Starter Liabilities</label>
+              <label className="fl" style={{ marginBottom: 8, display: "block" }}>{t("wealth.starterLiabilities", "Starter Liabilities")}</label>
               <div className="filter-strip" style={{ marginBottom: 0 }}>
                 {LIABILITY_TEMPLATES.map((template) => (
                   <button key={template.name} className="filter-chip" onClick={() => setLiabilityForm(template)}>
@@ -471,16 +485,18 @@ export default function NetWorthTracker({
             <div className="form-grid">
               <div className="fg full">
                 <label className="fl">{t("wealth.addLiability", "Add Liability")}</label>
-                <input className="fi" placeholder="Home loan, personal loan, credit card balance..." value={liabilityForm.name} onChange={(e) => setLiabilityForm((f) => ({ ...f, name: e.target.value }))} />
+                <input className="fi" placeholder={t("wealth.liabilityPlaceholder", "Home loan, personal loan, credit card balance...")} value={liabilityForm.name} onChange={(e) => setLiabilityForm((f) => ({ ...f, name: e.target.value }))} />
               </div>
               <div className="fg">
-                <label className="fl">Type</label>
+                <label className="fl">{t("common.type", "Type")}</label>
                 <select className="fs" value={liabilityForm.type} onChange={(e) => setLiabilityForm((f) => ({ ...f, type: e.target.value }))}>
-                  {["Loan", "Credit Card", "Mortgage", "Tax Due", "Other"].map((x) => <option key={x}>{x}</option>)}
+                  {["Loan", "Credit Card", "Mortgage", "Tax Due", "Other"].map((x) => (
+                    <option key={x} value={x}>{t(`wealth.liabilityType.${x}`, x)}</option>
+                  ))}
                 </select>
               </div>
               <div className="fg">
-                <label className="fl">Value</label>
+                <label className="fl">{t("common.value", "Value")}</label>
                 <input className="fi" type="number" value={liabilityForm.value} onChange={(e) => setLiabilityForm((f) => ({ ...f, value: e.target.value }))} />
               </div>
               <div className="fg full">

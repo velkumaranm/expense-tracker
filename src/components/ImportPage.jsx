@@ -22,7 +22,7 @@ export default function ImportPage({ onImport, showToast }) {
     reader.onload = (e) => {
       const { headers, rows } = parseCSV(e.target.result);
       if (!headers.length) {
-        showToast("Could not parse CSV.", "error");
+        showToast(t("import.parseFailed", "Could not parse CSV."), "error");
         return;
       }
       setCsvData({ headers, rows });
@@ -75,7 +75,7 @@ export default function ImportPage({ onImport, showToast }) {
       setProgress(Math.round((done / valid.length) * 100));
     }
     setStep("done");
-    showToast(`Imported ${done} transaction${done !== 1 ? "s" : ""}.`);
+    showToast(`${t("import.imported", "Imported")} ${done} ${t("import.transactions", "transaction(s)")}.`);
   };
 
   const reset = () => {
@@ -122,7 +122,7 @@ export default function ImportPage({ onImport, showToast }) {
           </div>
           <div className="section-card">
             <h3>{t("import.expectedFormat", "Expected Format")}</h3>
-            <p>Date, Type, Category, Amount, Note</p>
+            <p>{t("import.expectedColumns", "Date, Type, Category, Amount, Note")}</p>
             <div style={{ fontFamily: "monospace", fontSize: 12, color: "var(--text2)", background: "var(--surface)", padding: "12px 13px", borderRadius: 12, lineHeight: 1.8 }}>
               Date,Type,Category,Amount,Note<br />
               2026-04-15,expense,Food &amp; Dining,450,Lunch<br />
@@ -137,7 +137,7 @@ export default function ImportPage({ onImport, showToast }) {
       {step === "map" && csvData && (
         <div className="section-card">
           <h3>{t("import.mapColumns", "Map Columns")}</h3>
-          <p>{csvData.rows.length} rows found. Match each CSV column to the right field.</p>
+          <p>{csvData.rows.length} {t("import.rowsFound", "rows found. Match each CSV column to the right field.")}</p>
           <div className="form-grid">
             {Object.keys(colMap).map((field) => (
               <div key={field} className="fg">
@@ -172,7 +172,7 @@ export default function ImportPage({ onImport, showToast }) {
                   <strong>{r.valid ? t("common.valid", "Valid") : t("common.skip", "Skip")}</strong>
                   <span style={{ color: TYPE_META[r.type]?.color }}>{TYPE_META[r.type]?.label}</span>
                 </div>
-                <p>{r.date} • {r.category} • {fmtINR(r.amount)} • {r.note || "No note"}</p>
+                <p>{r.date} • {r.category} • {fmtINR(r.amount)} • {r.note || t("history.noNote", "No note")}</p>
               </div>
             ))}
           </div>
@@ -183,7 +183,7 @@ export default function ImportPage({ onImport, showToast }) {
       {step === "importing" && (
         <div className="section-card" style={{ textAlign: "center" }}>
           <h3>{t("import.importing", "Importing")}</h3>
-          <p>{imported} / {validCount} completed</p>
+          <p>{imported} / {validCount} {t("dashboard.completed", "completed")}</p>
           <div className="progress-track" style={{ marginTop: 12 }}>
             <div className="progress-fill" style={{ width: `${progress}%`, background: "var(--accent)" }} />
           </div>
@@ -193,7 +193,7 @@ export default function ImportPage({ onImport, showToast }) {
       {step === "done" && (
         <div className="section-card" style={{ textAlign: "center" }}>
           <h3>{t("import.complete", "Import Complete")}</h3>
-          <p>{imported} transactions imported successfully.</p>
+          <p>{imported} {t("import.successfullyImported", "transactions imported successfully.")}</p>
           <button className="btn-primary" style={{ marginTop: 14 }} onClick={reset}>{t("import.more", "Import More")}</button>
         </div>
       )}

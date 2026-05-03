@@ -115,6 +115,29 @@ const DEFAULT_ONBOARDING_STATE = {
   demoSeeded: false,
 };
 
+function portfolioHoldingsSignature(items = []) {
+  return JSON.stringify(
+    [...items]
+      .map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        symbol: item.symbol || "",
+        schemeCode: item.schemeCode || "",
+        quoteSymbol: item.quoteSymbol || "",
+        units: Number(item.units || 0),
+        costPerUnit: Number(item.costPerUnit || 0),
+      }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+  );
+}
+
+function sanitizePortfolioSnapshots(holdings = [], snapshots = []) {
+  const currentSignature = portfolioHoldingsSignature(holdings);
+  return (Array.isArray(snapshots) ? snapshots : [])
+    .filter((item) => item && item.signature && item.signature === currentSignature)
+    .slice(0, 30);
+}
+
 export default function App() {
   const emailActionSettings = {
     url: window.location.origin,
@@ -368,11 +391,17 @@ export default function App() {
           }
         : localFallback;
 
+      const safeHoldings = Array.isArray(data.holdings) ? data.holdings : [];
+      const safeSnapshots = sanitizePortfolioSnapshots(
+        safeHoldings,
+        Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []
+      );
+
       setGoals(Array.isArray(data.goals) ? data.goals : []);
       setAssets(Array.isArray(data.assets) ? data.assets : []);
       setLiabilities(Array.isArray(data.liabilities) ? data.liabilities : []);
-      setHoldings(Array.isArray(data.holdings) ? data.holdings : []);
-      setPortfolioSnapshots(Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []);
+      setHoldings(safeHoldings);
+      setPortfolioSnapshots(safeSnapshots);
       setMarketDisplayCurrency(data.marketDisplayCurrency || "INR");
       setLanguage(data.language || "en");
       setOnboardingState({ ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) });
@@ -389,7 +418,7 @@ export default function App() {
         assets: Array.isArray(data.assets) ? data.assets : [],
         liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
         holdings: Array.isArray(data.holdings) ? data.holdings : [],
-        portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
+        portfolioSnapshots: safeSnapshots,
         marketDisplayCurrency: data.marketDisplayCurrency || "INR",
         language: data.language || "en",
         onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
@@ -408,7 +437,7 @@ export default function App() {
           assets: Array.isArray(data.assets) ? data.assets : [],
           liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
           holdings: Array.isArray(data.holdings) ? data.holdings : [],
-          portfolioSnapshots: Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : [],
+          portfolioSnapshots: safeSnapshots,
           marketDisplayCurrency: data.marketDisplayCurrency || "INR",
           language: data.language || "en",
           onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
@@ -914,13 +943,13 @@ export default function App() {
   const budgetColor = budgetProgress > 90 ? "var(--expense)" : budgetProgress > 70 ? "var(--accent)" : "var(--income)";
 
   const alerts = [];
-  if (budgetNum && totals.expense > budgetNum) alerts.push({ title: "Budget exceeded", body: `You are ${fmtINR(totals.expense - budgetNum)} over the current budget.`, tone: "warn" });
-  else if (budgetNum && budgetProgress > 85) alerts.push({ title: "Budget getting tight", body: `${budgetProgress.toFixed(0)}% of the monthly expense budget is already used.`, tone: "info" });
-  if (momExpenseDelta > 12) alerts.push({ title: "Spending spike", body: `Expenses are up ${momExpenseDelta.toFixed(1)}% versus the previous month.`, tone: "warn" });
-  if (totals.income > 0 && totals.savingsRate < 10) alerts.push({ title: "Savings rate is low", body: "Try protecting savings before discretionary spend expands further.", tone: "warn" });
-  if (unusualTransactions.length) alerts.push({ title: "Unusual transactions detected", body: `${unusualTransactions.length} transaction${unusualTransactions.length > 1 ? "s look" : " looks"} materially larger than category norms.`, tone: "warn" });
-  if (recurringOutflow > 0 && totals.income > 0 && recurringOutflow > totals.income * 0.35) alerts.push({ title: "Recurring obligations are heavy", body: "Bills and recurring commitments are consuming a large share of monthly income.", tone: "info" });
-  if (!alerts.length) alerts.push({ title: "Healthy rhythm", body: "No urgent warnings from budgets, anomalies, or recurring commitments.", tone: "good" });
+  if (budgetNum && totals.expense > budgetNum) alerts.push({ title: t("dashboard.alertBudgetExceeded", "Budget exceeded"), body: `${t("dashboard.alertOverBudgetPrefix", "You are")} ${fmtINR(totals.expense - budgetNum)} ${t("dashboard.alertOverBudgetSuffix", "over the current budget.")}`, tone: "warn" });
+  else if (budgetNum && budgetProgress > 85) alerts.push({ title: t("dashboard.alertBudgetTight", "Budget getting tight"), body: `${budgetProgress.toFixed(0)}% ${t("dashboard.alertBudgetUsed", "of the monthly expense budget is already used.")}`, tone: "info" });
+  if (momExpenseDelta > 12) alerts.push({ title: t("dashboard.alertSpendingSpike", "Spending spike"), body: `${t("dashboard.alertExpenseUpPrefix", "Expenses are up")} ${momExpenseDelta.toFixed(1)}% ${t("dashboard.alertExpenseUpSuffix", "versus the previous month.")}`, tone: "warn" });
+  if (totals.income > 0 && totals.savingsRate < 10) alerts.push({ title: t("dashboard.alertLowSavings", "Savings rate is low"), body: t("dashboard.alertLowSavingsBody", "Try protecting savings before discretionary spend expands further."), tone: "warn" });
+  if (unusualTransactions.length) alerts.push({ title: t("dashboard.alertUnusualTitle", "Unusual transactions detected"), body: `${unusualTransactions.length} ${t("dashboard.alertUnusualBody", "transaction(s) look materially larger than category norms.")}`, tone: "warn" });
+  if (recurringOutflow > 0 && totals.income > 0 && recurringOutflow > totals.income * 0.35) alerts.push({ title: t("dashboard.alertRecurringHeavy", "Recurring obligations are heavy"), body: t("dashboard.alertRecurringHeavyBody", "Bills and recurring commitments are consuming a large share of monthly income."), tone: "info" });
+  if (!alerts.length) alerts.push({ title: t("dashboard.healthyRhythm", "Healthy rhythm"), body: t("dashboard.healthyRhythmBody", "No urgent warnings from budgets, anomalies, or recurring commitments."), tone: "good" });
 
   useEffect(() => {
     if (!notificationsEnabled) return;
@@ -995,6 +1024,7 @@ export default function App() {
   };
 
   const heuristicReport = buildHeuristicReport({
+    language,
     income: totals.income,
     expense: totals.expense,
     investment: totals.investment,
@@ -1021,6 +1051,7 @@ export default function App() {
           model: aiConfig.model,
           freeModel: aiConfig.freeModel,
           context: {
+            language,
             selectedMonth,
             totals,
             topCategories,
@@ -1049,6 +1080,7 @@ export default function App() {
 
   const askAIQuestion = async (question) => {
     const context = {
+      language,
       selectedMonth,
       totals,
       topCategories,
@@ -1168,8 +1200,8 @@ export default function App() {
     { id: "analytics", icon: "📊", label: t("nav.analytics", "Analytics") },
     { id: "goals", icon: "◎", label: t("nav.goals", "Goals") },
     { id: "wealth", icon: "⬢", label: t("nav.wealth", "Net Worth") },
-    { id: "timeline", icon: "◷", label: "Timeline" },
-    { id: "vault", icon: "🗂", label: "Vault" },
+    { id: "timeline", icon: "◷", label: t("nav.timeline", "Timeline") },
+    { id: "vault", icon: "🗂", label: t("nav.vault", "Vault") },
     { id: "add", icon: "＋", label: t("nav.add", "Add") },
     { id: "history", icon: "≡", label: t("nav.history", "History") },
     { id: "import", icon: "⬆", label: t("nav.import", "Import") },
@@ -1188,16 +1220,16 @@ export default function App() {
   const MOBILE_MORE_ITEMS = [
     { id: "analytics", icon: "📊", label: t("nav.analytics", "Analytics") },
     { id: "wealth", icon: "⬢", label: t("nav.wealth", "Net Worth") },
-    { id: "timeline", icon: "◷", label: "Timeline" },
-    { id: "vault", icon: "🗂", label: "Vault" },
+    { id: "timeline", icon: "◷", label: t("nav.timeline", "Timeline") },
+    { id: "vault", icon: "🗂", label: t("nav.vault", "Vault") },
     { id: "import", icon: "⬆", label: t("nav.import", "Import") },
     { id: "settings", icon: "⚙", label: t("nav.settings", "Settings") },
   ];
 
   const tabLoadingFallback = (
     <div className="section-card tab-loading-card">
-      <h3>Loading View</h3>
-      <p>Preparing the next workspace...</p>
+      <h3>{t("common.loadingView", "Loading View")}</h3>
+      <p>{t("common.preparingWorkspace", "Preparing the next workspace...")}</p>
     </div>
   );
 
@@ -1511,9 +1543,9 @@ export default function App() {
               <div className="section-head" style={{ marginBottom: 12 }}>
                 <div>
                   <h3>{t("nav.more", "More")}</h3>
-                  <p style={{ marginBottom: 0 }}>Quick access to the rest of your finance workspace.</p>
+                  <p style={{ marginBottom: 0 }}>{t("nav.mobileMenuHelp", "Quick access to the rest of your finance workspace.")}</p>
                 </div>
-                <button className="icon-btn" onClick={() => setMobileMenuOpen(false)}>Close</button>
+                <button className="icon-btn" onClick={() => setMobileMenuOpen(false)}>{t("common.close", "Close")}</button>
               </div>
               <div className="mobile-more-grid">
                 {MOBILE_MORE_ITEMS.map((item) => (

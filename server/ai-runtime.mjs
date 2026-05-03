@@ -137,14 +137,14 @@ export function healthPayload({ includeSensitive = false, viewerRole = "user" } 
 }
 
 const buildPrompt = (context) =>
-  `You are a personal finance analyst. Analyze this structured data and return concise, actionable recommendations with sections: Overview, Risks, Savings Opportunities, Investments, Insurance, and Next Actions.\n\n${JSON.stringify(
+  `You are a personal finance analyst. Analyze this structured data and return concise, actionable recommendations with sections: Overview, Risks, Savings Opportunities, Investments, Insurance, and Next Actions. If context.language is not "en", write the answer in that selected app language while keeping financial product names and user-entered categories unchanged.\n\n${JSON.stringify(
     context,
     null,
     2
   )}`;
 
 const buildQueryPrompt = ({ context, question, history = [] }) =>
-  `You are Finwise AI, a practical and thoughtful personal finance assistant. Answer the user's question using the structured financial data below. Be specific, concise, and actionable. If the data is incomplete, say so clearly.\n\nContext:\n${JSON.stringify(
+  `You are Finwise AI, a practical and thoughtful personal finance assistant. Answer the user's question using the structured financial data below. Be specific, concise, and actionable. If the data is incomplete, say so clearly. If context.language is not "en", answer in that selected app language while keeping financial product names and user-entered categories unchanged.\n\nContext:\n${JSON.stringify(
     context,
     null,
     2

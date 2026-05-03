@@ -1,6 +1,7 @@
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -22,11 +23,38 @@ export default function AnalyticsReports({
   onExportCsv,
 }) {
   const { t } = useI18n();
+  const fmtAxis = (value) => {
+    const amount = Number(value || 0);
+    if (!amount) return "0";
+    return new Intl.NumberFormat("en-IN", {
+      notation: "compact",
+      maximumFractionDigits: amount >= 100000 ? 1 : 0,
+    }).format(amount);
+  };
   const validMonths = monthlySeries.filter((month) => month.income || month.expense || month.investment || month.insurance);
   const bestSavingsMonth = validMonths.reduce((best, month) => (!best || month.savings > best.savings ? month : best), null);
   const worstExpenseMonth = validMonths.reduce((worst, month) => (!worst || month.expense > worst.expense ? month : worst), null);
   const averageSavings = validMonths.length ? validMonths.reduce((sum, month) => sum + month.savings, 0) / validMonths.length : 0;
   const averageExpense = validMonths.length ? validMonths.reduce((sum, month) => sum + month.expense, 0) / validMonths.length : 0;
+  const categoryKeys = Object.keys(categoryTrendSeries[0] || {})
+    .filter((k) => !["label", "month"].includes(k))
+    .map((key) => ({
+      key,
+      total: categoryTrendSeries.reduce((sum, row) => sum + Number(row[key] || 0), 0),
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 4);
+  const latestCategoryMonth = [...categoryTrendSeries]
+    .reverse()
+    .find((row) => categoryKeys.some(({ key }) => Number(row[key] || 0) > 0));
+  const categorySnapshot = categoryKeys
+    .map(({ key, total }) => ({
+      name: key,
+      value: Number(latestCategoryMonth?.[key] || 0),
+      total,
+    }))
+    .filter((item) => item.value > 0 || item.total > 0)
+    .sort((a, b) => (b.value || b.total) - (a.value || a.total));
 
   return (
     <>
@@ -88,34 +116,33 @@ export default function AnalyticsReports({
         <div className="chart-card chart-span-6">
           <div className="chart-title">{t("analytics.monthlyTrend", "Monthly Trend")}</div>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={monthlySeries}>
+            <BarChart data={monthlySeries} barGap={8} barCategoryGap="18%">
               <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="label" tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="label" tick={{ fill: "var(--text3)", fontSize: 10 }} tickMargin={8} axisLine={false} tickLine={false} />
+              <YAxis width={64} tickFormatter={fmtAxis} tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip content={<AreaTip />} />
-              <Legend />
-              <Line type="monotone" dataKey="income" name="Income" stroke="#34D399" strokeWidth={2.2} dot={false} />
-              <Line type="monotone" dataKey="expense" name="Expense" stroke="#F87171" strokeWidth={2.2} dot={false} />
-              <Line type="monotone" dataKey="investment" name="Investment" stroke="#818CF8" strokeWidth={2.2} dot={false} />
-            </LineChart>
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} iconSize={10} />
+              <Bar dataKey="income" name={t("dashboard.incomeLabel", "Income")} fill="#34D399" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="expense" name={t("dashboard.expensesLabel", "Expense")} fill="#F87171" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="investment" name={t("dashboard.investmentsLabel", "Investment")} fill="#818CF8" radius={[6, 6, 0, 0]} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="chart-card chart-span-6">
-          <div className="chart-title">{t("analytics.categoryTrend", "Category Trend Lines")}</div>
+          <div className="chart-title">{t("analytics.categoryTrend", "Category Spend Snapshot")}</div>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={categoryTrendSeries}>
+            <BarChart data={categorySnapshot} layout="vertical" margin={{ top: 4, right: 20, left: 20, bottom: 4 }}>
               <CartesianGrid stroke="var(--border)" vertical={false} />
-              <XAxis dataKey="label" tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <XAxis type="number" tickFormatter={fmtAxis} tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="name" width={92} tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip content={<AreaTip />} />
-              <Legend />
-              {Object.keys(categoryTrendSeries[0] || {})
-                .filter((k) => !["label", "month"].includes(k))
-                .map((k, i) => (
-                  <Line key={k} type="monotone" dataKey={k} stroke={PIE_COLORS[i % PIE_COLORS.length]} strokeWidth={2} dot={false} />
+              <Bar dataKey="value" name={latestCategoryMonth?.label || t("analytics.latestActiveMonth", "Latest active month")} radius={[0, 6, 6, 0]}>
+                {categorySnapshot.map((item, i) => (
+                  <Cell key={item.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                 ))}
-            </LineChart>
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
 

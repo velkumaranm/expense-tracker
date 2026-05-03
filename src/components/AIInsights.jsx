@@ -70,10 +70,10 @@ export default function AIInsights({
         : "OpenRouter Proxy"
     : "On-device";
   const suggestedPrompts = [
-    topCategories[0] ? `How do I reduce spending in ${topCategories[0].name} without being too aggressive?` : "",
-    unusualTransactions.length ? "Review the unusual transactions and tell me which one matters most." : "",
-    totals.income > 0 ? "Based on my current income, how much should go to spending, investing, and emergency reserves?" : "",
-    "What are the next three actions that would improve my finances this month?",
+    topCategories[0] ? `${t("ai.promptReducePrefix", "How do I reduce spending in")} ${topCategories[0].name} ${t("ai.promptReduceSuffix", "without being too aggressive?")}` : "",
+    unusualTransactions.length ? t("ai.promptReviewAnomalies", "Review the unusual transactions and tell me which one matters most.") : "",
+    totals.income > 0 ? t("ai.promptAllocation", "Based on my current income, how much should go to spending, investing, and emergency reserves?") : "",
+    t("ai.promptNextActions", "What are the next three actions that would improve my finances this month?"),
   ].filter(Boolean);
   const modelSections = parseModelSections(aiState.externalText);
 
@@ -87,7 +87,7 @@ export default function AIInsights({
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {!!chatMessages.length && <button className="icon-btn" onClick={onClearChat}>{t("ai.clear", "Clear Chat")}</button>}
           <button className="btn-primary" onClick={onGenerate} disabled={aiState.loading}>
-            {aiState.loading ? "Analyzing…" : t("ai.refresh", "Refresh Insights")}
+            {aiState.loading ? t("ai.analyzing", "Analyzing...") : t("ai.refresh", "Refresh Insights")}
           </button>
         </div>
       </div>
@@ -107,17 +107,35 @@ export default function AIInsights({
         </div>
       </div>
 
-      {aiState.error && <div className="alert-item warn" style={{ marginBottom: 12 }}><strong>AI request issue</strong><p>{aiState.error}</p></div>}
+      {aiState.error && <div className="alert-item warn" style={{ marginBottom: 12 }}><strong>{t("ai.requestIssue", "AI request issue")}</strong><p>{aiState.error}</p></div>}
 
       {report ? (
         <div className="ai-layout">
+          {!!modelSections.length && (
+            <div className="section-card ai-takeaways-card">
+              <h3>{t("ai.keyTakeaways", "Key Takeaways")}</h3>
+              <div className="takeaway-stack">
+                {modelSections.map((section) => (
+                  <div key={section.title} className="takeaway-row">
+                    <strong>{section.title}</strong>
+                    <ul className="takeaway-inline-list">
+                      {section.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="ai-main-grid">
             <div className="ai-main-col">
               <div className="section-card ai-chat-card">
                 <div className="ai-chat-head">
                   <h3>{t("ai.askTitle", "Ask Finwise AI")}</h3>
                   <p className="ai-chat-sub">
-                    Ask about savings, unusual spending, investing, insurance, goals, or net worth. The answer uses your live financial context.
+                    {t("ai.askHelp", "Ask about savings, unusual spending, investing, insurance, goals, or net worth. The answer uses your live financial context.")}
                   </p>
                   <div className="prompt-strip">
                     {suggestedPrompts.map((prompt) => (
@@ -132,7 +150,7 @@ export default function AIInsights({
                     chatMessages.map((msg) => (
                       <div key={msg.id} className={`ai-message ${msg.role === "user" ? "user" : "assistant"}`}>
                         <div className="ai-message-meta">
-                          <strong>{msg.role === "user" ? "You" : "Finwise AI"}</strong>
+                          <strong>{msg.role === "user" ? t("ai.you", "You") : "Finwise AI"}</strong>
                           <span>{msg.mode}</span>
                         </div>
                         <div className="ai-bubble">{msg.text}</div>
@@ -147,7 +165,7 @@ export default function AIInsights({
                 <div className="ai-chat-compose">
                   <div className="fg">
                     <textarea
-                      placeholder="Example: Where can I cut spending next month without hurting my goals?"
+                      placeholder={t("ai.questionPlaceholder", "Example: Where can I cut spending next month without hurting my goals?")}
                       value={question}
                       onChange={(e) => setQuestion(e.target.value)}
                     />
@@ -162,19 +180,19 @@ export default function AIInsights({
                       }}
                       disabled={askLoading}
                     >
-                      {askLoading ? "Thinking…" : t("ai.ask", "Ask")}
+                      {askLoading ? t("ai.thinking", "Thinking...") : t("ai.ask", "Ask")}
                     </button>
                     <span className="muted">
                       {externalAIReady
-                        ? `Using secured backend AI via ${modeLabel}.`
-                        : "Using local reasoning because no AI provider key is configured."}
+                        ? `${t("ai.usingBackend", "Using secured backend AI via")} ${modeLabel}.`
+                        : t("ai.usingLocal", "Using local reasoning because no AI provider key is configured.")}
                     </span>
                   </div>
                   {!externalAIReady && (
                     <p style={{ fontSize: 11.5, color: "var(--accent)", marginTop: 6 }}>
                       {isAdmin
-                        ? <>Current provider <strong>{aiConfig.provider}</strong> is not configured on the backend proxy yet.</>
-                        : "Backend AI is unavailable right now, so Finwise is using local reasoning."}
+                        ? <>{t("ai.providerNotConfiguredPrefix", "Current provider")} <strong>{aiConfig.provider}</strong> {t("ai.providerNotConfiguredSuffix", "is not configured on the backend proxy yet.")}</>
+                        : t("ai.backendUnavailable", "Backend AI is unavailable right now, so Finwise is using local reasoning.")}
                     </p>
                   )}
                 </div>
@@ -182,14 +200,14 @@ export default function AIInsights({
             </div>
 
             <div className="ai-main-col">
-              <div className="section-card">
+              <div className="section-card ai-context-card">
                 <h3>{t("ai.quickContext", "Quick Context")}</h3>
                 <div className="stack">
                   {report.summary.map((line) => <div key={line} className="stat-line"><span>{line}</span></div>)}
                 </div>
               </div>
 
-              <div className="section-card">
+              <div className="section-card ai-overview-card">
                 <h3>{t("ai.overview", "Overview")}</h3>
                 <p style={{ marginBottom: 12 }}>{report.headline}</p>
                 <div className="stack">
@@ -201,25 +219,7 @@ export default function AIInsights({
           </div>
 
           <div className="ai-insights-grid">
-            {!!modelSections.length && (
-              <div className="section-card ai-takeaways-card">
-                <h3>{t("ai.keyTakeaways", "Key Takeaways")}</h3>
-                <div className="takeaway-stack">
-                  {modelSections.map((section) => (
-                    <div key={section.title} className="takeaway-row">
-                      <strong>{section.title}</strong>
-                      <ul className="takeaway-inline-list">
-                        {section.items.map((item) => (
-                          <li key={item}>{item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="section-card">
+            <div className="section-card ai-insight-card">
               <h3>{t("ai.nextMoves", "Next Best Moves")}</h3>
               <div className="insight-list">
                 {report.tips.map((item) => (
@@ -231,7 +231,7 @@ export default function AIInsights({
               </div>
             </div>
 
-            <div className="section-card">
+            <div className="section-card ai-insight-card">
               <h3>{t("ai.savingsOpp", "Savings Opportunities")}</h3>
               <div className="insight-list">
                 {report.opportunities.map((item) => (
@@ -243,7 +243,7 @@ export default function AIInsights({
               </div>
             </div>
 
-            <div className="section-card">
+            <div className="section-card ai-insight-card">
               <h3>{t("ai.investGuidance", "Investment Guidance")}</h3>
               <div className="insight-list">
                 {report.investmentIdeas.map((item) => (
@@ -255,7 +255,7 @@ export default function AIInsights({
               </div>
             </div>
 
-            <div className="section-card">
+            <div className="section-card ai-insight-card">
               <h3>{t("ai.anomalyWatch", "Anomaly Watch")}</h3>
               {report.anomalies.length ? (
                 <div className="insight-list">
@@ -272,16 +272,16 @@ export default function AIInsights({
             </div>
 
             {unusualTransactions.length > 0 && (
-              <div className="section-card">
+              <div className="section-card ai-insight-card">
                 <h3>{t("ai.flaggedTx", "Flagged Transactions")}</h3>
                 <div className="stack">
-                  {unusualTransactions.map((t) => (
-                    <div key={t.id} className="table-row">
+                  {unusualTransactions.map((tx) => (
+                    <div key={tx.id} className="table-row">
                       <div className="split-row">
-                        <strong>{t.category}</strong>
-                        <span style={{ color: "var(--expense)" }}>{fmtINR(t.amount)}</span>
+                        <strong>{tx.category}</strong>
+                        <span style={{ color: "var(--expense)" }}>{fmtINR(tx.amount)}</span>
                       </div>
-                      <p>{t.date} • {t.note || "No note"}</p>
+                      <p>{tx.date} • {tx.note || t("history.noNote", "No note")}</p>
                     </div>
                   ))}
                 </div>
@@ -292,7 +292,7 @@ export default function AIInsights({
       ) : (
         <div className="section-card">
           <h3>{t("ai.noInsights", "No insights yet")}</h3>
-          <p>Run the analyzer to generate spending insights, anomaly detection, savings opportunities, and investment suggestions from your live data.</p>
+          <p>{t("ai.runAnalyzerHelp", "Run the analyzer to generate spending insights, anomaly detection, savings opportunities, and investment suggestions from your live data.")}</p>
         </div>
       )}
     </>

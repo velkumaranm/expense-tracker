@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { refreshMarketHoldings, rescueCommodityQuotes, rescueIndianHoldingsQuotes, searchMarketInstruments } from "../lib/market";
 import { convertAmount, fmtINR, fmtMoney, goalId } from "../lib/utils";
 import { useI18n } from "../lib/i18n";
@@ -49,18 +49,25 @@ function kindLabel(kind) {
   return "Stock";
 }
 
-function searchPlaceholder(kind) {
-  if (kind === "mutualFund") return "Search fund by name, e.g. HDFC Flexi Cap";
-  if (kind === "crypto") return "Search crypto pair or coin, e.g. BTC/USD";
-  if (kind === "commodity") return "Search gold, silver, WTI, Brent...";
-  return "Search stock or type symbol like RELIANCE.BSE";
+function translatedKindLabel(kind, t) {
+  if (kind === "mutualFund") return t("market.kindFund", "Mutual Fund");
+  if (kind === "crypto") return t("market.kindCrypto", "Crypto");
+  if (kind === "commodity") return t("market.kindCommodity", "Commodity");
+  return t("market.kindStockShort", "Stock");
 }
 
-function symbolLabel(kind) {
-  if (kind === "mutualFund") return "Scheme Code";
-  if (kind === "crypto") return "Crypto Symbol";
-  if (kind === "commodity") return "Commodity Symbol";
-  return "Stock Symbol";
+function searchPlaceholder(kind, t) {
+  if (kind === "mutualFund") return t("market.searchFundPlaceholder", "Search fund by name, e.g. HDFC Flexi Cap");
+  if (kind === "crypto") return t("market.searchCryptoPlaceholder", "Search crypto pair or coin, e.g. BTC/USD");
+  if (kind === "commodity") return t("market.searchCommodityPlaceholder", "Search gold, silver, WTI, Brent...");
+  return t("market.searchPlaceholder", "Search stock or type symbol like RELIANCE.BSE");
+}
+
+function symbolLabel(kind, t) {
+  if (kind === "mutualFund") return t("market.schemeCode", "Scheme Code");
+  if (kind === "crypto") return t("market.cryptoSymbol", "Crypto Symbol");
+  if (kind === "commodity") return t("market.commoditySymbol", "Commodity Symbol");
+  return t("market.stockSymbol", "Stock Symbol");
 }
 
 function symbolPlaceholder(kind) {
@@ -103,29 +110,46 @@ function suggestQuoteSymbol(kind, name, symbol) {
   return raw;
 }
 
-function providerCopy(kind, marketProviders) {
-  if (kind === "mutualFund") {
-    return "Mutual fund values use the latest NAV from a free AMFI-backed fund feed.";
+function normalizeStockSelection(item) {
+  const kind = item?.kind || "stock";
+  const rawSymbol = String(item?.symbol || "").trim().toUpperCase();
+  const rawExchange = String(item?.exchange || "").trim().toUpperCase();
+  if (kind !== "stock" || !rawSymbol) {
+    return {
+      symbol: rawSymbol,
+      quoteSymbol: String(item?.quoteSymbol || rawSymbol || "").trim().toUpperCase(),
+    };
   }
-  if (kind === "commodity") {
-    return marketProviders?.alphaVantage
-      ? "Commodities use a curated free-market feed path. Gold, silver, crude, and natural gas are the most reliable first set."
-      : "Add ALPHA_VANTAGE_API_KEY on the backend to refresh commodity holdings.";
+  if (rawSymbol.includes(".") || rawSymbol.includes(":") || rawSymbol.includes("=") || rawSymbol.includes("/")) {
+    return {
+      symbol: rawSymbol,
+      quoteSymbol: String(item?.quoteSymbol || rawSymbol).trim().toUpperCase(),
+    };
   }
-  if (kind === "crypto") {
-    if (marketProviders?.twelveData || marketProviders?.finnhub || marketProviders?.alphaVantage) {
-      return "Crypto refresh prefers the higher-free-call providers first, then falls back gracefully if one is unavailable."
-    }
-    return "Add TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY on the backend to search and refresh crypto prices.";
+  const exchangeLooksNse =
+    rawExchange.includes("NSE") ||
+    rawExchange.includes("NATIONAL STOCK EXCHANGE") ||
+    rawExchange.includes("INDIA");
+  const exchangeLooksBse =
+    rawExchange.includes("BSE") ||
+    rawExchange.includes("BOMBAY STOCK EXCHANGE");
+  if (exchangeLooksNse) {
+    const symbol = `${rawSymbol}.NS`;
+    return { symbol, quoteSymbol: symbol };
   }
-  if (marketProviders?.twelveData || marketProviders?.finnhub || marketProviders?.alphaVantage) {
-    return "Stocks prefer the higher-free-call providers first, then fall back to the next available feed during refresh.";
+  if (exchangeLooksBse) {
+    const symbol = `${rawSymbol}.BO`;
+    return { symbol, quoteSymbol: symbol };
   }
-  return "Add TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY on the backend to search and refresh stock prices.";
+  const suggested = suggestQuoteSymbol(kind, item?.name || "", rawSymbol);
+  return {
+    symbol: rawSymbol,
+    quoteSymbol: String(item?.quoteSymbol || suggested || rawSymbol).trim().toUpperCase(),
+  };
 }
 
-function toLocalStamp(iso) {
-  if (!iso) return "Not refreshed yet";
+function toLocalStamp(iso, t) {
+  if (!iso) return t("market.notRefreshedYet", "Not refreshed yet");
   try {
     return new Date(iso).toLocaleString("en-IN", {
       dateStyle: "medium",
@@ -265,6 +289,24 @@ export default function PortfolioHoldings({
   const [searchState, setSearchState] = useState({ query: "", loading: false, error: "", results: [] });
   const [refreshing, setRefreshing] = useState(false);
   const [editingId, setEditingId] = useState("");
+  const largePortfolio = holdings.length >= 20;
+  const holdingsSignature = useMemo(
+    () =>
+      JSON.stringify(
+        [...holdings]
+          .map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            symbol: item.symbol || "",
+            schemeCode: item.schemeCode || "",
+            quoteSymbol: item.quoteSymbol || "",
+            units: Number(item.units || 0),
+            costPerUnit: Number(item.costPerUnit || 0),
+          }))
+          .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+      ),
+    [holdings]
+  );
 
   const summary = useMemo(() => {
     const totalInvested = holdings.reduce(
@@ -308,6 +350,13 @@ export default function PortfolioHoldings({
     [snapshots]
   );
 
+  useEffect(() => {
+    setSnapshots((prev) => {
+      const filtered = (prev || []).filter((item) => item.signature && item.signature === holdingsSignature);
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [holdingsSignature, setSnapshots]);
+
   const formatHoldingAmount = (amount, item) => {
     const sourceCurrency = holdingCurrency(item);
     if (marketDisplayCurrency === "BOTH") {
@@ -325,16 +374,23 @@ export default function PortfolioHoldings({
   };
 
   const applyResult = (item) => {
+    const normalizedSelection = normalizeStockSelection(item);
     setForm((prev) => ({
       ...prev,
       kind: item.kind || prev.kind,
       name: item.name || prev.name,
-      symbol: item.symbol || "",
-      quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") || "",
+      symbol: normalizedSelection.symbol || "",
+      quoteSymbol:
+        normalizedSelection.quoteSymbol ||
+        suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") ||
+        "",
       currency: item.currency || defaultCurrencyForDraft({
         kind: item.kind || prev.kind,
-        symbol: item.symbol || "",
-        quoteSymbol: item.quoteSymbol || suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") || "",
+        symbol: normalizedSelection.symbol || "",
+        quoteSymbol:
+          normalizedSelection.quoteSymbol ||
+          suggestQuoteSymbol(item.kind || prev.kind, item.name || prev.name, item.symbol || "") ||
+          "",
         account: item.account || "",
       }),
       schemeCode: item.schemeCode || "",
@@ -424,7 +480,8 @@ export default function PortfolioHoldings({
             : item
         )
       );
-      showToast("Holding updated. Refresh once if you want a fresh market quote.");
+      setSnapshots([]);
+      showToast(t("market.updatedToast", "Holding updated. Refresh once if you want a fresh market quote."));
     } else {
       setHoldings((prev) => [
         {
@@ -442,7 +499,8 @@ export default function PortfolioHoldings({
         },
         ...prev,
       ]);
-      showToast("Holding added. Refresh once to fetch the latest price.");
+      setSnapshots([]);
+      showToast(t("market.addedToast", "Holding added. Refresh once to fetch the latest price."));
     }
 
     setEditingId("");
@@ -452,7 +510,8 @@ export default function PortfolioHoldings({
 
   const removeHolding = (id) => {
     setHoldings((prev) => prev.filter((item) => item.id !== id));
-    showToast("Holding removed.", "warning");
+    setSnapshots([]);
+    showToast(t("market.removedToast", "Holding removed. Snapshot history cleared so it can rebuild from your current portfolio."), "warning");
   };
 
   const doRefresh = async () => {
@@ -491,6 +550,7 @@ export default function PortfolioHoldings({
         totalValue,
         totalInvested,
         gainLoss: totalValue - totalInvested,
+        signature: holdingsSignature,
       };
       setSnapshots((prev) => {
         const filtered = prev.filter((item) => item.date !== snapshotDate);
@@ -498,11 +558,11 @@ export default function PortfolioHoldings({
       });
       showToast(
         failedCount
-          ? `Prices refreshed. ${failedCount} holding${failedCount > 1 ? "s" : ""} still need attention.`
-          : "Portfolio prices refreshed."
+          ? `${t("market.refreshedWithAttention", "Prices refreshed.")} ${failedCount} ${failedCount > 1 ? t("market.holdingPlural", "holdings") : t("market.holdingSingular", "holding")} ${t("market.needAttentionSuffix", "still need attention.")}`
+          : t("market.refreshedToast", "Portfolio prices refreshed.")
       );
     } catch (error) {
-      showToast(error.message || "Could not refresh prices.", "error");
+      showToast(error.message || t("market.refreshFailed", "Could not refresh prices."), "error");
     } finally {
       setRefreshing(false);
     }
@@ -514,7 +574,7 @@ export default function PortfolioHoldings({
         <div>
           <h3>{t("market.title", "Market Holdings")}</h3>
           <p style={{ marginBottom: 0 }}>
-            Track market holdings separately from the cash-flow ledger, then refresh quotes whenever you need. Free providers work best when refreshes are spaced out.
+            {t("market.subtitle", "Track market holdings separately from the cash-flow ledger, then refresh quotes whenever you need.")}
           </p>
         </div>
         <div className="goal-head-actions">
@@ -529,23 +589,33 @@ export default function PortfolioHoldings({
               </button>
             ))}
           </div>
-          <span className="status-pill neutral">{holdings.length} holding{holdings.length === 1 ? "" : "s"}</span>
+          <span className="status-pill neutral">{holdings.length} {holdings.length === 1 ? t("market.holdingSingular", "holding") : t("market.holdingPlural", "holdings")}</span>
           <button className="btn-primary" disabled={!holdings.length || refreshing} onClick={doRefresh}>
-            {refreshing ? "Refreshing..." : t("market.refresh", "Refresh Prices")}
+            {refreshing ? t("market.refreshing", "Refreshing...") : t("market.refresh", "Refresh Prices")}
           </button>
         </div>
       </div>
+
+      {holdings.length ? (
+        <div className="muted" style={{ marginBottom: 12, textAlign: "left" }}>
+          {refreshing
+            ? `${t("market.refreshingCountPrefix", "Refreshing")} ${holdings.length} ${holdings.length === 1 ? t("market.holdingSingular", "holding") : t("market.holdingPlural", "holdings")} ${t("market.refreshingCountSuffix", "now. Large batches can take a little longer.")}`
+            : largePortfolio
+              ? `${t("market.largePortfolioPrefix", "This portfolio has")} ${holdings.length} ${t("market.largePortfolioSuffix", "holdings. The list has its own scroll area.")}`
+              : t("market.refreshHint", "Refresh quotes whenever you need.")}
+        </div>
+      ) : null}
 
       <div className="mini-grid" style={{ marginBottom: 14 }}>
         <div className="mini-card">
           <div className="k">{t("market.investedValue", "Invested Value")}</div>
           <div className="v">{marketDisplayCurrency === "BOTH" ? `${fmtMoney(summary.totalInvested, "INR")} (${fmtMoney(convertAmount(summary.totalInvested, "INR", "USD", marketFx), "USD")})` : fmtMoney(summary.totalInvested, marketDisplayCurrency)}</div>
-          <div className="muted">Units multiplied by your average cost per unit.</div>
+          <div className="muted">{t("market.unitsMultipliedSub", "Units multiplied by your average cost per unit.")}</div>
         </div>
         <div className="mini-card">
           <div className="k">{t("market.currentValue", "Current Value")}</div>
           <div className="v" style={{ color: "var(--invest)" }}>{marketDisplayCurrency === "BOTH" ? `${fmtMoney(summary.totalValue, "INR")} (${fmtMoney(convertAmount(summary.totalValue, "INR", "USD", marketFx), "USD")})` : fmtMoney(summary.totalValue, marketDisplayCurrency)}</div>
-          <div className="muted">Latest fetched market value from the current holdings set.</div>
+          <div className="muted">{t("market.latestValueSub", "Latest fetched market value from the current holdings set.")}</div>
         </div>
         <div className="mini-card">
           <div className="k">{t("market.unrealized", "Unrealized P&L")}</div>
@@ -553,7 +623,7 @@ export default function PortfolioHoldings({
             {summary.gainLoss >= 0 ? "+" : "-"}{marketDisplayCurrency === "BOTH" ? `${fmtMoney(Math.abs(summary.gainLoss), "INR")} (${fmtMoney(convertAmount(Math.abs(summary.gainLoss), "INR", "USD", marketFx), "USD")})` : fmtMoney(Math.abs(summary.gainLoss), marketDisplayCurrency)}
           </div>
           <div className="muted">
-            Last refresh: {toLocalStamp(summary.lastRefreshAt)}
+            {t("market.lastRefresh", "Last refresh")}: {toLocalStamp(summary.lastRefreshAt, t)}
           </div>
         </div>
       </div>
@@ -561,7 +631,7 @@ export default function PortfolioHoldings({
       <div className="portfolio-panel" style={{ marginBottom: 16 }}>
         <div className="portfolio-grid">
           <div>
-            <div className="fl" style={{ marginBottom: 8 }}>Instrument Type</div>
+            <div className="fl" style={{ marginBottom: 8 }}>{t("market.instrumentType", "Instrument Type")}</div>
             <div className="tab2" style={{ marginBottom: 10 }}>
               {KIND_OPTIONS.map((option) => (
                 <button
@@ -569,7 +639,7 @@ export default function PortfolioHoldings({
                   className={`tab2-btn ${form.kind === option.id ? "active" : ""}`}
                   onClick={() => setForm((prev) => ({ ...prev, kind: option.id, symbol: "", schemeCode: "" }))}
                 >
-                  {option.label}
+                  {t(`market.kind.${option.id}`, option.label)}
                 </button>
               ))}
             </div>
@@ -577,13 +647,13 @@ export default function PortfolioHoldings({
             <div className="setting-row" style={{ alignItems: "stretch", marginBottom: 10 }}>
               <input
                 className="setting-input"
-                placeholder={form.kind === "stock" ? t("market.searchPlaceholder", "Search stock or type symbol like RELIANCE.BSE") : searchPlaceholder(form.kind)}
+                placeholder={searchPlaceholder(form.kind, t)}
                 value={searchState.query}
                 onChange={(e) => setSearchState((prev) => ({ ...prev, query: e.target.value }))}
                 onKeyDown={(e) => e.key === "Enter" && runSearch()}
               />
               <button className="btn-secondary" onClick={runSearch} disabled={searchState.loading}>
-                {searchState.loading ? "Searching..." : t("common.search", "Search")}
+                {searchState.loading ? t("market.searching", "Searching...") : t("common.search", "Search")}
               </button>
             </div>
 
@@ -609,7 +679,7 @@ export default function PortfolioHoldings({
                 <input className="fi" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} placeholder="Reliance Industries, HDFC Flexi Cap..." />
               </div>
               <div className="fg">
-                <label className="fl">{symbolLabel(form.kind)}</label>
+                <label className="fl">{symbolLabel(form.kind, t)}</label>
                 <input
                   className="fi"
                   value={form.kind === "mutualFund" ? form.schemeCode : form.symbol}
@@ -647,23 +717,23 @@ export default function PortfolioHoldings({
                 <input className="fi" value={form.account} onChange={(e) => setForm((prev) => ({ ...prev, account: e.target.value }))} placeholder="Zerodha, Groww, Folio..." />
               </div>
               <div className="fg">
-                <label className="fl">Acquired On</label>
+                <label className="fl">{t("market.acquiredOn", "Acquired On")}</label>
                 <input className="fi" type="date" value={form.acquiredOn} onChange={(e) => setForm((prev) => ({ ...prev, acquiredOn: e.target.value }))} />
               </div>
               <div className="fg">
-                <label className="fl">Sector / Theme</label>
+                <label className="fl">{t("market.sectorTheme", "Sector / Theme")}</label>
                 <input className="fi" value={form.sector} onChange={(e) => setForm((prev) => ({ ...prev, sector: e.target.value }))} placeholder="IT, Banking, Energy, ETF..." />
               </div>
               <div className="fg">
-                <label className="fl">Monthly SIP / Contribution</label>
+                <label className="fl">{t("market.monthlySipContribution", "Monthly SIP / Contribution")}</label>
                 <input className="fi" type="number" value={form.monthlyContribution} onChange={(e) => setForm((prev) => ({ ...prev, monthlyContribution: e.target.value }))} placeholder="0" />
               </div>
               <div className="fg">
-                <label className="fl">Target Weight %</label>
+                <label className="fl">{t("market.targetWeight", "Target Weight %")}</label>
                 <input className="fi" type="number" value={form.targetWeight} onChange={(e) => setForm((prev) => ({ ...prev, targetWeight: e.target.value }))} placeholder="20" />
               </div>
               <div className="fg">
-                <label className="fl">Realized Gain</label>
+                <label className="fl">{t("market.realizedGain", "Realized Gain")}</label>
                 <input className="fi" type="number" value={form.realizedGain} onChange={(e) => setForm((prev) => ({ ...prev, realizedGain: e.target.value }))} placeholder="0" />
               </div>
               <div className="fg full">
@@ -677,14 +747,9 @@ export default function PortfolioHoldings({
                 </div>
               </div>
             </div>
-
-            <div className="muted" style={{ marginTop: 10 }}>
-              {providerCopy(form.kind, marketProviders)}
-              {form.kind === "stock" ? " If a provider keeps missing an Indian stock, save the exact exchange code here, like INFY.NS or TCS.NS." : ""}
-            </div>
           </div>
 
-          <div>
+          <div className="portfolio-side-stack">
             <div className="chart-title" style={{ marginBottom: 10 }}>{t("market.recentSnapshots", "Recent Portfolio Snapshots")}</div>
             {recentSnapshots.length ? (
               <div className="portfolio-snapshot-grid">
@@ -697,11 +762,11 @@ export default function PortfolioHoldings({
                       </span>
                     </div>
                     <div className="stat-line">
-                      <span>Current value</span>
+                      <span>{t("market.currentValueLower", "Current value")}</span>
                       <span>{fmtINR(item.totalValue)}</span>
                     </div>
                     <div className="stat-line">
-                      <span>Invested value</span>
+                      <span>{t("market.investedValueLower", "Invested value")}</span>
                       <span>{fmtINR(item.totalInvested)}</span>
                     </div>
                   </div>
@@ -709,87 +774,90 @@ export default function PortfolioHoldings({
               </div>
             ) : (
               <div className="portfolio-snapshot-empty">
-                <p className="muted">Refresh once and Finwise will keep a small local history of your daily portfolio values.</p>
+                <p className="muted">{t("market.refreshHistoryHelp", "Refresh once and Finwise will keep a small local history of your daily portfolio values.")}</p>
               </div>
             )}
+
+            <div className="chart-title" style={{ marginTop: 16, marginBottom: 10 }}>
+              {t("market.currentHoldings", "Current Holdings")}
+            </div>
+            <div className={`portfolio-holdings-scroll ${holdings.length ? "stack" : ""}`}>
+              {holdings.length ? holdings.map((item) => (
+                <div key={item.id} className="portfolio-item">
+                  <div className="portfolio-main">
+                    <div>
+                      <div className="tx-cat">
+                        {item.name}
+                        <span className="tx-badge investment">{translatedKindLabel(item.kind, t)}</span>
+                      </div>
+                      <div className="tx-note">
+                        {item.kind === "mutualFund" ? `Scheme ${item.schemeCode}` : item.symbol}
+                        {item.quoteSymbol && item.quoteSymbol !== item.symbol ? ` • quote ${item.quoteSymbol}` : ""}
+                        {item.account ? ` • ${item.account}` : ""}
+                        {item.source ? ` • ${item.source}` : ""}
+                        {item.priceDate ? ` • ${item.priceLabel || t("market.latest", "Latest")} ${item.priceDate}` : ""}
+                      </div>
+                      {item.sector ? <div className="muted" style={{ marginTop: 4 }}>{item.sector}</div> : null}
+                    </div>
+                    <div className="portfolio-figures">
+                      <div className="portfolio-number">{formatHoldingAmount(Number(item.currentValue || item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</div>
+                      <div className="muted">
+                        {Number(item.units || 0).toLocaleString("en-IN")} {t("market.unitsLower", "units")}
+                        {" • "}{t("market.avgCostShort", "Avg cost")} {formatHoldingPrice(Number(item.costPerUnit || 0), item)}
+                        {Number(item.currentPrice || 0) > 0 ? ` • ${t("market.live", "Live")} ${formatHoldingPrice(Number(item.currentPrice || 0), item)}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="portfolio-subgrid">
+                    <div className="mini-stat">
+                      <span>{t("market.invested", "Invested")}</span>
+                      <strong>{formatHoldingAmount(Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</strong>
+                    </div>
+                    <div className="mini-stat">
+                      <span>{t("market.pnl", "P&L")}</span>
+                      <strong style={{ color: Number(item.gainLoss || 0) >= 0 ? "var(--income)" : "var(--expense)" }}>
+                        {Number(item.gainLoss || 0) >= 0 ? "+" : "-"}{formatHoldingAmount(Math.abs(Number(item.gainLoss || 0)), item)}
+                      </strong>
+                    </div>
+                    <div className="mini-stat">
+                      <span>{t("market.refreshStatus", "Refresh Status")}</span>
+                      <strong>
+                        {normalizeHoldingError(item.refreshError)
+                          ? Number(item.currentPrice || 0) > 0
+                            ? t("market.usingLastClose", "Using last close")
+                            : t("market.needsAttention", "Needs attention")
+                          : item.refreshedAt
+                            ? t("common.updated", "Updated")
+                            : t("common.pending", "Pending")}
+                      </strong>
+                    </div>
+                    <div className="mini-stat">
+                      <span>{t("market.sipRealized", "SIP / Realized")}</span>
+                      <strong>{Number(item.monthlyContribution || 0) > 0 ? formatHoldingPrice(Number(item.monthlyContribution || 0), item) : "—"}</strong>
+                      <div className="muted" style={{ marginTop: 4 }}>
+                        {Number(item.realizedGain || 0)
+                          ? `${t("market.realized", "Realized")} ${formatHoldingPrice(Number(item.realizedGain || 0), item)}`
+                          : t("market.noRealizedNote", "No realized-gain note yet.")}
+                      </div>
+                    </div>
+                    <div className="portfolio-actions">
+                      <div className="setting-row" style={{ justifyContent: "flex-end" }}>
+                        <button className="tx-btn edit" onClick={() => beginEdit(item)}>{t("common.edit", "Edit")}</button>
+                        <button className="tx-btn del" onClick={() => removeHolding(item.id)}>{t("common.delete", "Delete")}</button>
+                      </div>
+                    </div>
+                  </div>
+                  {normalizeHoldingError(item.refreshError) && <div className="auth-error" style={{ marginTop: 10, marginBottom: 0 }}>{normalizeHoldingError(item.refreshError)}</div>}
+                </div>
+              )) : (
+                <div className="empty-state portfolio-holdings-empty">
+                  <div className="es-icon">📈</div>
+                  <p>{t("market.noHoldings", "Add your first stock, mutual fund, crypto, or commodity holding to start daily valuation and P&L tracking.")}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="stack">
-        {holdings.length ? holdings.map((item) => (
-          <div key={item.id} className="portfolio-item">
-            <div className="portfolio-main">
-              <div>
-                <div className="tx-cat">
-                  {item.name}
-                  <span className="tx-badge investment">{kindLabel(item.kind)}</span>
-                </div>
-                <div className="tx-note">
-                  {item.kind === "mutualFund" ? `Scheme ${item.schemeCode}` : item.symbol}
-                  {item.quoteSymbol && item.quoteSymbol !== item.symbol ? ` • quote ${item.quoteSymbol}` : ""}
-                  {item.account ? ` • ${item.account}` : ""}
-                  {item.source ? ` • ${item.source}` : ""}
-                  {item.priceDate ? ` • ${item.priceLabel || "Latest"} ${item.priceDate}` : ""}
-                </div>
-                {item.sector ? <div className="muted" style={{ marginTop: 4 }}>{item.sector}</div> : null}
-              </div>
-              <div className="portfolio-figures">
-                <div className="portfolio-number">{formatHoldingAmount(Number(item.currentValue || item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</div>
-                <div className="muted">
-                  {Number(item.units || 0).toLocaleString("en-IN")} units
-                  {" • "}Avg cost {formatHoldingPrice(Number(item.costPerUnit || 0), item)}
-                  {Number(item.currentPrice || 0) > 0 ? ` • Live ${formatHoldingPrice(Number(item.currentPrice || 0), item)}` : ""}
-                </div>
-              </div>
-            </div>
-            <div className="portfolio-subgrid">
-              <div className="mini-stat">
-                <span>Invested</span>
-                <strong>{formatHoldingAmount(Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item)}</strong>
-              </div>
-              <div className="mini-stat">
-                <span>P&L</span>
-                <strong style={{ color: Number(item.gainLoss || 0) >= 0 ? "var(--income)" : "var(--expense)" }}>
-                  {Number(item.gainLoss || 0) >= 0 ? "+" : "-"}{formatHoldingAmount(Math.abs(Number(item.gainLoss || 0)), item)}
-                </strong>
-              </div>
-              <div className="mini-stat">
-                <span>Refresh Status</span>
-                <strong>
-                  {normalizeHoldingError(item.refreshError)
-                    ? Number(item.currentPrice || 0) > 0
-                      ? "Using last close"
-                      : "Needs attention"
-                    : item.refreshedAt
-                      ? t("common.updated", "Updated")
-                      : t("common.pending", "Pending")}
-                </strong>
-              </div>
-              <div className="mini-stat">
-                <span>SIP / Realized</span>
-                <strong>{Number(item.monthlyContribution || 0) > 0 ? formatHoldingPrice(Number(item.monthlyContribution || 0), item) : "—"}</strong>
-                <div className="muted" style={{ marginTop: 4 }}>
-                  {Number(item.realizedGain || 0)
-                    ? `Realized ${formatHoldingPrice(Number(item.realizedGain || 0), item)}`
-                    : "No realized-gain note yet."}
-                </div>
-              </div>
-              <div className="portfolio-actions">
-                <div className="setting-row" style={{ justifyContent: "flex-end" }}>
-                  <button className="tx-btn edit" onClick={() => beginEdit(item)}>{t("common.edit", "Edit")}</button>
-                  <button className="tx-btn del" onClick={() => removeHolding(item.id)}>{t("common.delete", "Delete")}</button>
-                </div>
-              </div>
-            </div>
-            {normalizeHoldingError(item.refreshError) && <div className="auth-error" style={{ marginTop: 10, marginBottom: 0 }}>{normalizeHoldingError(item.refreshError)}</div>}
-          </div>
-        )) : (
-          <div className="empty-state">
-            <div className="es-icon">📈</div>
-            <p>{t("market.noHoldings", "Add your first stock, mutual fund, crypto, or commodity holding to start daily valuation and P&L tracking.")}</p>
-          </div>
-        )}
       </div>
     </div>
   );

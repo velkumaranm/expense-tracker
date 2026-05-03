@@ -1,11 +1,25 @@
+async function readJsonSafe(res) {
+  const text = await res.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: "The market service returned an unreadable response." };
+  }
+}
+
 export async function searchMarketInstruments(kind, query) {
-  const url = new URL("/api/market/search", window.location.origin);
-  url.searchParams.set("kind", kind);
-  url.searchParams.set("q", query);
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || "Could not search instruments");
-  return data.results || [];
+  try {
+    const url = new URL("/api/market/search", window.location.origin);
+    url.searchParams.set("kind", kind);
+    url.searchParams.set("q", query);
+    const res = await fetch(url);
+    const data = await readJsonSafe(res);
+    if (!res.ok) throw new Error(data?.error || "Could not search instruments");
+    return data.results || [];
+  } catch (error) {
+    throw new Error(error?.message || "Market search is unavailable right now. Please try again in a moment.");
+  }
 }
 
 export async function refreshMarketHoldings(holdings) {
@@ -14,14 +28,14 @@ export async function refreshMarketHoldings(holdings) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ holdings }),
   });
-  const data = await res.json();
+  const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data?.error || "Could not refresh holdings");
   return data;
 }
 
 export async function fetchMarketFx() {
   const res = await fetch("/api/market/fx");
-  const data = await res.json();
+  const data = await readJsonSafe(res);
   if (!res.ok) throw new Error(data?.error || "Could not fetch FX rates");
   return data;
 }

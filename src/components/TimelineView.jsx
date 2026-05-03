@@ -1,4 +1,5 @@
 import { addMonths, nextRecurringDate } from "../lib/utils";
+import { useI18n } from "../lib/i18n";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -19,6 +20,7 @@ export default function TimelineView({
   holdings,
   plannerSummary,
 }) {
+  const { t } = useI18n();
   const now = new Date();
   const end = addMonths(now, 5);
   const months = [];
@@ -37,8 +39,8 @@ export default function TimelineView({
       id: `bill-${bill.id}`,
       date: next,
       title: bill.category,
-      kind: "Recurring bill",
-      detail: `${bill.recurringFrequency || "monthly"} • ${bill.note || "Cash commitment"}`,
+      kind: t("timeline.recurringBill", "Recurring bill"),
+      detail: `${bill.recurringFrequency || "monthly"} • ${bill.note || t("timeline.cashCommitment", "Cash commitment")}`,
     });
   });
 
@@ -50,8 +52,8 @@ export default function TimelineView({
       id: `goal-${goal.id}`,
       date: target,
       title: goal.name,
-      kind: "Goal milestone",
-      detail: `${goal.category} target date`,
+      kind: t("timeline.goalMilestone", "Goal milestone"),
+      detail: `${goal.category} ${t("timeline.targetDate", "target date")}`,
     });
   });
 
@@ -63,7 +65,7 @@ export default function TimelineView({
       id: `doc-${doc.id}`,
       date: renewal,
       title: doc.title,
-      kind: "Document renewal",
+      kind: t("timeline.documentRenewal", "Document renewal"),
       detail: doc.issuer || doc.type,
     });
   });
@@ -74,9 +76,9 @@ export default function TimelineView({
       events.push({
         id: `emi-${idx}`,
         date,
-        title: "EMI due",
-        kind: "Loan repayment",
-        detail: `Expected EMI cycle • ${plannerSummary.emiAmount}`,
+        title: t("timeline.emiDue", "EMI due"),
+        kind: t("timeline.loanRepayment", "Loan repayment"),
+        detail: `${t("timeline.expectedEmiCycle", "Expected EMI cycle")} • ${plannerSummary.emiAmount}`,
       });
     });
   }
@@ -87,9 +89,9 @@ export default function TimelineView({
       events.push({
         id: `sip-${idx}`,
         date,
-        title: "SIP window",
-        kind: "Investment rhythm",
-        detail: "Review monthly contributions and rebalance plan.",
+        title: t("timeline.sipWindow", "SIP window"),
+        kind: t("timeline.investmentRhythm", "Investment rhythm"),
+        detail: t("timeline.reviewMonthly", "Review monthly contributions and rebalance plan."),
       });
     });
   }
@@ -106,8 +108,8 @@ export default function TimelineView({
     <>
       <div className="page-header">
         <div>
-          <h1>Calendar & Timeline</h1>
-          <p>See recurring bills, goal milestones, vault renewals, and key money dates in one timeline.</p>
+          <h1>{t("timeline.title", "Calendar & Timeline")}</h1>
+          <p>{t("timeline.subtitle", "See recurring bills, goal milestones, vault renewals, and key money dates in one timeline.")}</p>
         </div>
       </div>
 
@@ -117,7 +119,7 @@ export default function TimelineView({
             <div className="section-head" style={{ marginBottom: 10 }}>
               <div>
                 <h3>{month.label}</h3>
-                <p style={{ marginBottom: 0 }}>{month.items.length} scheduled item{month.items.length === 1 ? "" : "s"}</p>
+                <p style={{ marginBottom: 0 }}>{month.items.length} {t("timeline.scheduledItems", "scheduled item(s)")}</p>
               </div>
             </div>
             {month.items.length ? (
@@ -135,7 +137,7 @@ export default function TimelineView({
               </div>
             ) : (
               <div className="empty-state" style={{ padding: 18 }}>
-                <p>No tracked dates for this month yet.</p>
+                <p>{t("timeline.noDates", "No tracked dates for this month yet.")}</p>
               </div>
             )}
           </div>

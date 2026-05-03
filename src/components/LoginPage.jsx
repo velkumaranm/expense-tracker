@@ -26,7 +26,6 @@ export default function LoginPage({
   onSignup,
   onGoogle,
   onSendEmailLink,
-  onPasskeyLogin,
   passkeyProfiles = [],
   passkeySupported = false,
 }) {
@@ -45,8 +44,6 @@ export default function LoginPage({
   const [sentLinkEmail, setSentLinkEmail] = useState("");
   const [rememberedEmails, setRememberedEmails] = useState(() => readRememberedEmails());
   const [showSavedEmails, setShowSavedEmails] = useState(false);
-  const [passkeyLoading, setPasskeyLoading] = useState(false);
-
   const getError = (e, fallback) => e?.message?.replace("Firebase: ", "") || fallback;
 
   const handleEmail = async () => {
@@ -73,9 +70,9 @@ export default function LoginPage({
     setLoading(true);
     try {
       await sendPasswordResetEmail(auth, resetEmail);
-      setOk("Reset link sent. Check your inbox.");
+      setOk(t("login.resetSent", "Reset link sent. Check your inbox."));
     } catch (e) {
-      setErr(getError(e, "Could not send reset email."));
+      setErr(getError(e, t("login.resetFailed", "Could not send reset email.")));
     } finally {
       setLoading(false);
     }
@@ -100,40 +97,11 @@ export default function LoginPage({
   };
 
   const knownEmails = rememberedEmails.filter(Boolean);
-  const passkeyEmails = passkeyProfiles.map((item) => item.email).filter(Boolean);
-  const preferredPasskeyEmail = magicEmail || email || passkeyEmails[0] || "";
-
   const pickEmail = (value) => {
     setEmail(value);
     setMagicEmail(value);
     setResetEmail(value);
     setShowSavedEmails(false);
-  };
-
-  const handlePasskey = async () => {
-    if (!onPasskeyLogin) return;
-    setErr("");
-    setOk("");
-    setPasskeyLoading(true);
-    try {
-      const result = await onPasskeyLogin(preferredPasskeyEmail);
-      if (result?.email) {
-        pickEmail(result.email);
-      }
-      if (result?.mode === "session") {
-        setOk(`Passkey accepted for ${result.email}. Welcome back.`);
-      } else if (result?.mode === "magic-link") {
-        setSentLinkEmail(result.email);
-        setAuthTab("email-link");
-        setOk(`Passkey confirmed. A sign-in link was sent to ${result.email}.`);
-      } else {
-        setOk("Passkey accepted.");
-      }
-    } catch (e) {
-      setErr(getError(e, "Could not continue with passkey."));
-    } finally {
-      setPasskeyLoading(false);
-    }
   };
 
   if (forgot) {
@@ -142,17 +110,17 @@ export default function LoginPage({
         <div className="login-bg" />
         <div className="login-card">
           <div className="login-logo">◈ Finwise</div>
-          <div className="login-tagline">Reset your password</div>
+          <div className="login-tagline">{t("login.resetPassword", "Reset your password")}</div>
           {err && <div className="auth-error">{err}</div>}
           {ok && <div className="auth-ok">{ok}</div>}
           {!ok && (
             <>
               <div className="fg" style={{ marginBottom: 14 }}>
-              <label className="fl">Email</label>
+              <label className="fl">{t("login.email", "Email")}</label>
               <input className="fi" name="email" autoComplete="email" type="email" placeholder="you@example.com" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} />
             </div>
               <button className="btn-primary" onClick={handleForgot} disabled={loading}>
-                {loading ? "Sending..." : "Send Reset Link"}
+                {loading ? t("settings.sending", "Sending...") : t("login.sendResetLink", "Send Reset Link")}
               </button>
             </>
           )}
@@ -181,24 +149,19 @@ export default function LoginPage({
         <div className="login-quick-panel">
           <div className="login-quick-copy">
             <strong>{t("login.quickTitle", "Mobile-friendly sign in")}</strong>
-            <p>{t("login.quickBody", "Use a passkey on this device, a magic link in your inbox, or Google when you want the fastest path back in.")}</p>
+            <p>{t("login.quickBody", "Use Google, a magic link in your inbox, or email and password when you want the fastest path back in.")}</p>
           </div>
           <div className="login-quick-actions">
-            {passkeySupported && passkeyProfiles.length ? (
-              <button className="btn-secondary login-quick-btn" onClick={handlePasskey} disabled={passkeyLoading}>
-                {passkeyLoading ? t("login.passkeyWorking", "Checking passkey...") : t("login.passkey", "Continue with Passkey")}
-              </button>
-            ) : null}
             <button className="google-btn login-quick-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
           </div>
           {!passkeySupported ? (
             <div className="login-passkey-note">
-              {t("login.passkeyLocalNote", "Passkeys are best enabled on the secure deployed app. For local use, continue with Google, email, or magic link.")}
+              {t("login.passkeyLocalNote", "Passkeys are shown after sign-in inside Settings. For now, use Google, email, or a magic link to get into Finwise.")}
             </div>
           ) : null}
-          {passkeySupported && !passkeyProfiles.length ? (
+          {passkeySupported ? (
             <div className="login-passkey-note">
-              {t("login.passkeySetupNote", "After your first sign-in, you can add a passkey from Settings for one-touch device unlock.")}
+              {t("login.passkeySetupNote", "After your first sign-in, you can add a device passkey from Settings. A full passkey-only sign-in flow is not enabled yet.")}
             </div>
           ) : null}
         </div>
@@ -242,7 +205,7 @@ export default function LoginPage({
                     zIndex: 20,
                   }}
                 >
-                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>Saved accounts</div>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t("login.savedAccounts", "Saved accounts")}</div>
                   <div className="stack" style={{ gap: 6 }}>
                     {knownEmails.map((item) => (
                       <button
@@ -276,7 +239,7 @@ export default function LoginPage({
               </div>
             ) : null}
             <button className="btn-primary" onClick={handleEmail} disabled={loading}>
-              {loading ? "Please wait..." : signTab === "signin" ? t("login.signin", "Sign In") : t("login.signup", "Sign Up")}
+              {loading ? t("common.pleaseWait", "Please wait...") : signTab === "signin" ? t("login.signin", "Sign In") : t("login.signup", "Sign Up")}
             </button>
           </>
         ) : (
@@ -338,7 +301,7 @@ export default function LoginPage({
               {t("login.magicHint", "We will send a one-tap sign-in link to your inbox. If you do not see it quickly, check Promotions or Spam first.")}
             </p>
             <button className="btn-primary" onClick={handleEmailLink} disabled={loading}>
-              {loading ? "Sending..." : sentLinkEmail ? t("login.resendLink", "Resend Sign-In Link") : t("login.sendLink", "Send Sign-In Link")}
+              {loading ? t("settings.sending", "Sending...") : sentLinkEmail ? t("login.resendLink", "Resend Sign-In Link") : t("login.sendLink", "Send Sign-In Link")}
             </button>
             {sentLinkEmail && (
               <div className="magic-checklist">
