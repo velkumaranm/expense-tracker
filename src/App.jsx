@@ -997,15 +997,29 @@ export default function App() {
     return cred;
   };
   const signInWithProvider = async (provider) => {
-    const useRedirect = window.matchMedia?.("(max-width: 768px)")?.matches;
-    if (useRedirect) {
+    await setPersistence(auth, browserLocalPersistence);
+    const isStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator?.standalone === true;
+    if (isStandalone) {
       await signInWithRedirect(auth, provider);
       return;
     }
-    await signInWithPopup(auth, provider);
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      const code = String(error?.code || "");
+      const needsRedirectFallback = [
+        "auth/popup-blocked",
+        "auth/popup-closed-by-user",
+        "auth/cancelled-popup-request",
+        "auth/operation-not-supported-in-this-environment",
+      ].includes(code);
+      if (!needsRedirectFallback) throw error;
+      await signInWithRedirect(auth, provider);
+    }
   };
   const handleGoogle = async () => {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
     await signInWithProvider(provider);
   };
   const handleCreatePasskey = async (emailOverride) => {

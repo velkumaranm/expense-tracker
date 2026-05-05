@@ -148,6 +148,11 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     return syncChainRef.current;
   };
 
+  const getAuthToken = async () => {
+    if (!user?.getIdToken) throw new Error(t("vault.signInToSync", "Sign in to sync this file to cloud."));
+    return user.getIdToken();
+  };
+
   const syncAttachment = async (docId, attachment) => {
     if (!user?.uid) {
       updateAttachmentRecord(docId, attachment.id, { syncStatus: "local", lastError: t("vault.signInToSync", "Sign in to sync this file to cloud.") });
@@ -155,7 +160,8 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     }
     updateAttachmentRecord(docId, attachment.id, { syncStatus: "syncing", lastError: "" });
     try {
-      const uploaded = await syncVaultAttachmentToCloud(user.uid, docId, attachment);
+      const token = await getAuthToken();
+      const uploaded = await syncVaultAttachmentToCloud(user.uid, docId, attachment, token);
       updateAttachmentRecord(docId, attachment.id, uploaded);
     } catch (error) {
       updateAttachmentRecord(docId, attachment.id, {
@@ -245,7 +251,8 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
   const openAttachment = async (attachmentId) => {
     try {
       const attachment = docs.flatMap((item) => item.attachments || []).find((item) => item.id === attachmentId);
-      const url = await openVaultAttachment(attachment);
+      const token = user?.uid ? await getAuthToken() : "";
+      const url = await openVaultAttachment(attachment, { authToken: token, userId: user?.uid || "" });
       const tab = window.open(url, "_blank", "noopener,noreferrer");
       if (!tab) throw new Error(t("vault.allowPopups", "Allow pop-ups to open attached documents."));
     } catch (error) {
@@ -257,7 +264,8 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     const attachment = docs
       .flatMap((item) => (item.id === docId ? item.attachments || [] : []))
       .find((file) => file.id === attachmentId);
-    await removeVaultAttachment(attachment).catch(() => {});
+    const token = user?.uid ? await getAuthToken().catch(() => "") : "";
+    await removeVaultAttachment(attachment, { authToken: token, userId: user?.uid || "" }).catch(() => {});
     setDocs((prev) =>
       prev.map((item) =>
         item.id === docId
@@ -300,7 +308,8 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
             continue;
           }
           try {
-            migrated.push(await migrateLocalAttachmentToCloud(user.uid, item.id, file));
+            const token = await getAuthToken();
+            migrated.push(await migrateLocalAttachmentToCloud(user.uid, item.id, file, token));
           } catch {
             migrated.push(file);
           }

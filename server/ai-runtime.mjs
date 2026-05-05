@@ -15,18 +15,20 @@ export function loadLocalEnv() {
   if (envLoaded) return;
   envLoaded = true;
 
-  const envPath = resolve(process.cwd(), ".env");
-  if (!existsSync(envPath)) return;
+  [".env.local", ".env"].forEach((fileName) => {
+    const envPath = resolve(process.cwd(), fileName);
+    if (!existsSync(envPath)) return;
 
-  const raw = readFileSync(envPath, "utf8");
-  raw.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) return;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) return;
-    const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim().replace(/^['"]|['"]$/g, "");
-    if (!(key in process.env) || !process.env[key]) process.env[key] = value;
+    const raw = readFileSync(envPath, "utf8");
+    raw.split(/\r?\n/).forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const eq = trimmed.indexOf("=");
+      if (eq === -1) return;
+      const key = trimmed.slice(0, eq).trim();
+      const value = trimmed.slice(eq + 1).trim().replace(/^['"]|['"]$/g, "");
+      if (!(key in process.env) || !process.env[key]) process.env[key] = value;
+    });
   });
 }
 
@@ -96,6 +98,7 @@ export async function resolveViewerAccess(authHeader = "") {
     isAdmin,
     viewerRole: isAdmin ? "admin" : "user",
     email,
+    uid: String(lookupUser.localId || payloadClaims?.user_id || payloadClaims?.sub || "").trim(),
   };
 }
 

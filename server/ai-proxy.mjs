@@ -10,6 +10,11 @@ import {
   searchMarketInstruments,
   fetchUsdInrFx,
 } from "./market-runtime.mjs";
+import {
+  deleteVaultAttachment,
+  fetchVaultAttachment,
+  uploadVaultAttachment,
+} from "./vault-runtime.mjs";
 
 loadLocalEnv();
 
@@ -20,7 +25,7 @@ const json = (res, status, body) => {
   res.writeHead(status, {
     "content-type": "application/json",
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
   });
   res.end(JSON.stringify(body));
@@ -31,7 +36,7 @@ const readBody = (req) =>
     let data = "";
     req.on("data", (chunk) => {
       data += chunk;
-      if (data.length > 1_000_000) {
+      if (data.length > 5_500_000) {
         reject(new Error("Request too large"));
         req.destroy();
       }
@@ -115,6 +120,62 @@ const server = createServer(async (req, res) => {
       json(res, 200, { ok: true, text });
     } catch (error) {
       json(res, 500, { ok: false, error: error.message || "Proxy query failed" });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/vault/upload") {
+    try {
+      const body = await readBody(req);
+      const attachment = await uploadVaultAttachment({
+        authHeader: req.headers.authorization || "",
+        userId: body.userId || "",
+        docId: body.docId || "",
+        attachmentId: body.attachmentId || "",
+        fileName: body.fileName || "",
+        contentType: body.contentType || "",
+        dataUrl: body.dataUrl || "",
+      });
+      json(res, 200, { ok: true, attachment });
+    } catch (error) {
+      json(res, 500, { ok: false, error: error.message || "Vault upload failed" });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/vault/file")) {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      const payload = await fetchVaultAttachment({
+        authHeader: req.headers.authorization || "",
+        userId: url.searchParams.get("userId") || "",
+        pathname: url.searchParams.get("pathname") || "",
+      });
+      res.writeHead(200, {
+        "content-type": payload.blob?.contentType || payload.headers.get("content-type") || "application/octet-stream",
+        "content-disposition": payload.headers.get("content-disposition") || "inline",
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "GET,DELETE,OPTIONS",
+        "access-control-allow-headers": "content-type,authorization",
+      });
+      res.end(payload.buffer);
+    } catch (error) {
+      json(res, 500, { ok: false, error: error.message || "Vault file could not be opened" });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && req.url === "/api/vault/file") {
+    try {
+      const body = await readBody(req);
+      await deleteVaultAttachment({
+        authHeader: req.headers.authorization || "",
+        userId: body.userId || "",
+        pathname: body.pathname || "",
+      });
+      json(res, 200, { ok: true });
+    } catch (error) {
+      json(res, 500, { ok: false, error: error.message || "Vault file could not be deleted" });
     }
     return;
   }

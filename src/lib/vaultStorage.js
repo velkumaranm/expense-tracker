@@ -1,6 +1,3 @@
-import { deleteObject, getDownloadURL, ref, uploadString } from "firebase/storage";
-import { storage } from "../firebase";
-
 const DB_NAME = "finwise-vault";
 const STORE_NAME = "attachments";
 const DB_VERSION = 1;
@@ -63,82 +60,86 @@ export async function saveVaultAttachment(docId, file) {
   return record;
 }
 
-function sanitizeName(name = "") {
-  return String(name || "file").replace(/[^a-z0-9._-]+/gi, "-");
-}
-
-function buildStoragePath(userId, docId, attachmentId, fileName) {
-  return `users/${userId}/vault/${docId}/${attachmentId}-${sanitizeName(fileName)}`;
+async function parseApiResponse(res, fallbackMessage) {
+  const text = await res.text();
+  let data = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!res.ok) throw new Error(text || fallbackMessage);
+      return {};
+    }
+  }
+  if (!res.ok) throw new Error(data?.error || fallbackMessage);
+  return data;
 }
 
 export async function saveVaultAttachmentToCloud(userId, docId, file) {
-  if (!userId) throw new Error("Sign in before uploading cloud vault files.");
-  const dataUrl = await fileToDataUrl(file);
-  const id = crypto.randomUUID();
-  const storagePath = buildStoragePath(userId, docId, id, file.name);
-  const storageRef = ref(storage, storagePath);
-  await uploadString(storageRef, dataUrl, "data_url", {
-    contentType: file.type || "application/octet-stream",
-  });
-  const downloadUrl = await getDownloadURL(storageRef);
-  return {
-    id,
-    docId,
-    name: file.name,
-    type: file.type || "application/octet-stream",
-    size: Number(file.size || 0),
-    storedAt: new Date().toISOString(),
-    storagePath,
-    downloadUrl,
-    storageDriver: "firebase",
-  };
+  throw new Error("Save to cloud requires the sync flow.");
 }
 
-export async function migrateLocalAttachmentToCloud(userId, docId, attachment) {
+export async function migrateLocalAttachmentToCloud(userId, docId, attachment, authToken = "") {
   if (!attachment?.id) throw new Error("Missing local attachment reference.");
+  if (!authToken) throw new Error("Sign in again before syncing this vault file.");
   const local = await getVaultAttachment(attachment.id);
   if (!local?.dataUrl) throw new Error("Local attachment payload is unavailable.");
-  const storagePath = buildStoragePath(userId, docId, attachment.id, attachment.name || local.name);
-  const storageRef = ref(storage, storagePath);
-  await uploadString(storageRef, local.dataUrl, "data_url", {
-    contentType: attachment.type || local.type || "application/octet-stream",
+  const res = await fetch("/api/vault/upload", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      userId,
+      docId,
+      attachmentId: attachment.id,
+      fileName: attachment.name || local.name,
+      contentType: attachment.type || local.type || "application/octet-stream",
+      dataUrl: local.dataUrl,
+    }),
   });
-  const downloadUrl = await getDownloadURL(storageRef);
-  return {
-    id: attachment.id,
-    docId,
-    name: attachment.name || local.name,
-    type: attachment.type || local.type || "application/octet-stream",
-    size: Number(attachment.size || local.size || 0),
-    storedAt: attachment.storedAt || local.storedAt || new Date().toISOString(),
-    storagePath,
-    downloadUrl,
-    storageDriver: "firebase",
-    syncStatus: "synced",
-    lastError: "",
-  };
+  const data = await parseApiResponse(res, "Could not sync vault file to cloud.");
+  return data.attachment;
 }
 
-export async function syncVaultAttachmentToCloud(userId, docId, attachment) {
+export async function syncVaultAttachmentToCloud(userId, docId, attachment, authToken = "") {
   if (!attachment?.id) throw new Error("Missing local attachment reference.");
-  return migrateLocalAttachmentToCloud(userId, docId, attachment);
+  return migrateLocalAttachmentToCloud(userId, docId, attachment, authToken);
 }
 
-export async function openVaultAttachment(attachment) {
+export async function openVaultAttachment(attachment, { authToken = "", userId = "" } = {}) {
   if (!attachment) throw new Error("Attachment is missing.");
-  if (attachment.downloadUrl) return attachment.downloadUrl;
-  if (attachment.storagePath) {
-    return getDownloadURL(ref(storage, attachment.storagePath));
+  if (attachment.storageDriver === "vercel-blob" || attachment.storagePath) {
+    if (!authToken || !userId) throw new Error("Sign in again before opening this vault file.");
+    const url = new URL("/api/vault/file", window.location.origin);
+    url.searchParams.set("userId", userId);
+    url.searchParams.set("pathname", attachment.storagePath || "");
+    const res = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) {
+      await parseApiResponse(res, "Could not open vault attachment.");
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
   }
   const local = await getVaultAttachment(attachment.id);
   if (!local?.dataUrl) throw new Error("Attachment content is unavailable.");
   return local.dataUrl;
 }
 
-export async function removeVaultAttachment(attachment) {
+export async function removeVaultAttachment(attachment, { authToken = "", userId = "" } = {}) {
   if (!attachment) return;
-  if (attachment.storagePath) {
-    await deleteObject(ref(storage, attachment.storagePath)).catch(() => {});
+  if ((attachment.storageDriver === "vercel-blob" || attachment.storagePath) && authToken && userId) {
+    await fetch("/api/vault/file", {
+      method: "DELETE",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ userId, pathname: attachment.storagePath || "" }),
+    }).catch(() => {});
   }
   if (attachment.id) {
     await deleteVaultAttachment(attachment.id).catch(() => {});
