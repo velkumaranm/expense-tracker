@@ -44,6 +44,7 @@ import {
   annualizedRecurringAmount,
   fmtINR,
   getMonthRange,
+  goalId,
   getStorageKey,
   monthLabel,
   nextRecurringDate,
@@ -175,6 +176,20 @@ function normalizeVaultDocRecord(item = {}) {
   });
 }
 
+function normalizeCollectionRecord(item = {}) {
+  return cleanObject({
+    ...item,
+    id: String(item.id || goalId()),
+  });
+}
+
+function normalizeSnapshotRecord(item = {}) {
+  return cleanObject({
+    ...item,
+    id: String(item.id || item.date || goalId()),
+  });
+}
+
 export default function App() {
   const emailActionSettings = {
     url: window.location.origin,
@@ -246,6 +261,22 @@ export default function App() {
   const latestAlertsRef = useRef("");
   const profileReadyRef = useRef(false);
   const lastProfileSerializedRef = useRef("");
+  const goalsReadyRef = useRef(false);
+  const lastGoalsSerializedRef = useRef("");
+  const cloudGoalIdsRef = useRef(new Set());
+  const legacyGoalsRef = useRef([]);
+  const assetsReadyRef = useRef(false);
+  const lastAssetsSerializedRef = useRef("");
+  const cloudAssetIdsRef = useRef(new Set());
+  const legacyAssetsRef = useRef([]);
+  const liabilitiesReadyRef = useRef(false);
+  const lastLiabilitiesSerializedRef = useRef("");
+  const cloudLiabilityIdsRef = useRef(new Set());
+  const legacyLiabilitiesRef = useRef([]);
+  const snapshotsReadyRef = useRef(false);
+  const lastSnapshotsSerializedRef = useRef("");
+  const cloudSnapshotIdsRef = useRef(new Set());
+  const legacySnapshotsRef = useRef([]);
   const holdingsStateRef = useRef([]);
   const holdingsReadyRef = useRef(false);
   const lastHoldingsSerializedRef = useRef("");
@@ -353,6 +384,178 @@ export default function App() {
     return onSnapshot(collection(db, "users", user.uid, "expenses"), (snap) =>
       setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      goalsReadyRef.current = false;
+      cloudGoalIdsRef.current = new Set();
+      setGoals([]);
+      return;
+    }
+    const uid = user.uid;
+    goalsReadyRef.current = false;
+    return onSnapshot(collection(db, "users", uid, "goals"), async (snap) => {
+      const cloudItems = sortRecordsById(
+        snap.docs.map((item) => normalizeCollectionRecord({ id: item.id, ...item.data() }))
+      );
+      cloudGoalIdsRef.current = new Set(cloudItems.map((item) => item.id));
+
+      let nextItems = cloudItems;
+      if (!cloudItems.length) {
+        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []);
+        const strongestLocal = Array.isArray(localFallback) && localFallback.length
+          ? localFallback
+          : Array.isArray(legacyGoalsRef.current) && legacyGoalsRef.current.length
+            ? legacyGoalsRef.current
+            : [];
+        if (strongestLocal.length) {
+          nextItems = sortRecordsById(strongestLocal.map(normalizeCollectionRecord));
+          const batch = writeBatch(db);
+          nextItems.forEach((item) => {
+            const { id, ...payload } = item;
+            batch.set(doc(db, "users", uid, "goals", id), payload, { merge: true });
+          });
+          await batch.commit();
+          cloudGoalIdsRef.current = new Set(nextItems.map((item) => item.id));
+        }
+      }
+
+      lastGoalsSerializedRef.current = JSON.stringify(nextItems);
+      goalsReadyRef.current = true;
+      setGoals(nextItems);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      assetsReadyRef.current = false;
+      cloudAssetIdsRef.current = new Set();
+      setAssets([]);
+      return;
+    }
+    const uid = user.uid;
+    assetsReadyRef.current = false;
+    return onSnapshot(collection(db, "users", uid, "assets"), async (snap) => {
+      const cloudItems = sortRecordsById(
+        snap.docs.map((item) => normalizeCollectionRecord({ id: item.id, ...item.data() }))
+      );
+      cloudAssetIdsRef.current = new Set(cloudItems.map((item) => item.id));
+
+      let nextItems = cloudItems;
+      if (!cloudItems.length) {
+        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []);
+        const strongestLocal = Array.isArray(localFallback) && localFallback.length
+          ? localFallback
+          : Array.isArray(legacyAssetsRef.current) && legacyAssetsRef.current.length
+            ? legacyAssetsRef.current
+            : [];
+        if (strongestLocal.length) {
+          nextItems = sortRecordsById(strongestLocal.map(normalizeCollectionRecord));
+          const batch = writeBatch(db);
+          nextItems.forEach((item) => {
+            const { id, ...payload } = item;
+            batch.set(doc(db, "users", uid, "assets", id), payload, { merge: true });
+          });
+          await batch.commit();
+          cloudAssetIdsRef.current = new Set(nextItems.map((item) => item.id));
+        }
+      }
+
+      lastAssetsSerializedRef.current = JSON.stringify(nextItems);
+      assetsReadyRef.current = true;
+      setAssets(nextItems);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      liabilitiesReadyRef.current = false;
+      cloudLiabilityIdsRef.current = new Set();
+      setLiabilities([]);
+      return;
+    }
+    const uid = user.uid;
+    liabilitiesReadyRef.current = false;
+    return onSnapshot(collection(db, "users", uid, "liabilities"), async (snap) => {
+      const cloudItems = sortRecordsById(
+        snap.docs.map((item) => normalizeCollectionRecord({ id: item.id, ...item.data() }))
+      );
+      cloudLiabilityIdsRef.current = new Set(cloudItems.map((item) => item.id));
+
+      let nextItems = cloudItems;
+      if (!cloudItems.length) {
+        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []);
+        const strongestLocal = Array.isArray(localFallback) && localFallback.length
+          ? localFallback
+          : Array.isArray(legacyLiabilitiesRef.current) && legacyLiabilitiesRef.current.length
+            ? legacyLiabilitiesRef.current
+            : [];
+        if (strongestLocal.length) {
+          nextItems = sortRecordsById(strongestLocal.map(normalizeCollectionRecord));
+          const batch = writeBatch(db);
+          nextItems.forEach((item) => {
+            const { id, ...payload } = item;
+            batch.set(doc(db, "users", uid, "liabilities", id), payload, { merge: true });
+          });
+          await batch.commit();
+          cloudLiabilityIdsRef.current = new Set(nextItems.map((item) => item.id));
+        }
+      }
+
+      lastLiabilitiesSerializedRef.current = JSON.stringify(nextItems);
+      liabilitiesReadyRef.current = true;
+      setLiabilities(nextItems);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      snapshotsReadyRef.current = false;
+      cloudSnapshotIdsRef.current = new Set();
+      setPortfolioSnapshots([]);
+      return;
+    }
+    const uid = user.uid;
+    snapshotsReadyRef.current = false;
+    return onSnapshot(collection(db, "users", uid, "portfolioSnapshots"), async (snap) => {
+      const cloudItems = sortRecordsById(
+        snap.docs.map((item) => normalizeSnapshotRecord({ id: item.id, ...item.data() }))
+      );
+      cloudSnapshotIdsRef.current = new Set(cloudItems.map((item) => item.id));
+
+      let nextItems = cloudItems;
+      if (!cloudItems.length) {
+        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots")), []);
+        const localBackup = readHoldingBackup(uid).portfolioSnapshots;
+        const strongestLocal = Array.isArray(localFallback) && localFallback.length
+          ? localFallback
+          : Array.isArray(localBackup) && localBackup.length
+            ? localBackup
+            : Array.isArray(legacySnapshotsRef.current) && legacySnapshotsRef.current.length
+              ? legacySnapshotsRef.current
+              : [];
+        if (strongestLocal.length) {
+          nextItems = sortRecordsById(
+            sanitizePortfolioSnapshots(holdingsStateRef.current, strongestLocal).map(normalizeSnapshotRecord)
+          );
+          const batch = writeBatch(db);
+          nextItems.forEach((item) => {
+            const { id, ...payload } = item;
+            batch.set(doc(db, "users", uid, "portfolioSnapshots", id), payload, { merge: true });
+          });
+          await batch.commit();
+          cloudSnapshotIdsRef.current = new Set(nextItems.map((item) => item.id));
+        }
+      }
+
+      const safeSnapshots = sortRecordsById(
+        sanitizePortfolioSnapshots(holdingsStateRef.current, nextItems).map(normalizeSnapshotRecord)
+      );
+      lastSnapshotsSerializedRef.current = JSON.stringify(safeSnapshots);
+      snapshotsReadyRef.current = true;
+      setPortfolioSnapshots(safeSnapshots);
+    });
   }, [user]);
 
   useEffect(() => {
@@ -499,10 +702,6 @@ export default function App() {
     profileReadyRef.current = false;
     return onSnapshot(profileRef, async (snap) => {
       const localFallback = {
-        goals: safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []),
-        assets: safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []),
-        liabilities: safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []),
-        portfolioSnapshots: safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots")), []),
         marketDisplayCurrency: localStorage.getItem(getStorageKey(uid, "market-display-currency")) || "INR",
         language: localStorage.getItem(getStorageKey(uid, "language")) || "en",
         onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...safeJSON(localStorage.getItem(getStorageKey(uid, "onboarding")), {}) },
@@ -517,6 +716,10 @@ export default function App() {
       };
 
       const cloudData = snap.exists() ? snap.data() || {} : {};
+      legacyGoalsRef.current = Array.isArray(cloudData.goals) ? cloudData.goals : [];
+      legacyAssetsRef.current = Array.isArray(cloudData.assets) ? cloudData.assets : [];
+      legacyLiabilitiesRef.current = Array.isArray(cloudData.liabilities) ? cloudData.liabilities : [];
+      legacySnapshotsRef.current = Array.isArray(cloudData.portfolioSnapshots) ? cloudData.portfolioSnapshots : [];
       legacyHoldingsRef.current = Array.isArray(cloudData.holdings) ? cloudData.holdings : [];
       legacyVaultDocsRef.current = Array.isArray(cloudData.vaultDocs) ? cloudData.vaultDocs : [];
 
@@ -527,16 +730,6 @@ export default function App() {
           aiConfig: { ...localFallback.aiConfig, ...(cloudData.aiConfig || {}) },
         }
         : localFallback;
-
-      const safeSnapshots = sanitizePortfolioSnapshots(
-        holdingsStateRef.current,
-        Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []
-      );
-
-      setGoals(Array.isArray(data.goals) ? data.goals : []);
-      setAssets(Array.isArray(data.assets) ? data.assets : []);
-      setLiabilities(Array.isArray(data.liabilities) ? data.liabilities : []);
-      setPortfolioSnapshots(safeSnapshots);
       setMarketDisplayCurrency(data.marketDisplayCurrency || "INR");
       setLanguage(data.language || "en");
       setOnboardingState({ ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) });
@@ -548,10 +741,6 @@ export default function App() {
       setUserRole((current) => (current === "admin" ? "admin" : "user"));
 
       lastProfileSerializedRef.current = JSON.stringify({
-        goals: Array.isArray(data.goals) ? data.goals : [],
-        assets: Array.isArray(data.assets) ? data.assets : [],
-        liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
-        portfolioSnapshots: safeSnapshots,
         marketDisplayCurrency: data.marketDisplayCurrency || "INR",
         language: data.language || "en",
         onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
@@ -565,10 +754,6 @@ export default function App() {
 
       if (!snap.exists()) {
         await setDoc(profileRef, {
-          goals: Array.isArray(data.goals) ? data.goals : [],
-          assets: Array.isArray(data.assets) ? data.assets : [],
-          liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
-          portfolioSnapshots: safeSnapshots,
           marketDisplayCurrency: data.marketDisplayCurrency || "INR",
           language: data.language || "en",
           onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
@@ -583,10 +768,6 @@ export default function App() {
   }, [user]);
 
   const profileState = useMemo(() => ({
-    goals,
-    assets,
-    liabilities,
-    portfolioSnapshots,
     marketDisplayCurrency,
     language,
     onboardingState,
@@ -595,7 +776,7 @@ export default function App() {
     budget,
     role: userRole,
     notificationsEnabled,
-  }), [goals, assets, liabilities, portfolioSnapshots, marketDisplayCurrency, language, onboardingState, plannerState, aiConfig, budget, userRole, notificationsEnabled]);
+  }), [marketDisplayCurrency, language, onboardingState, plannerState, aiConfig, budget, userRole, notificationsEnabled]);
 
   useEffect(() => {
     if (!user || !profileReadyRef.current) return;
@@ -610,12 +791,69 @@ export default function App() {
     localStorage.setItem(getStorageKey(user.uid, "goals"), JSON.stringify(goals));
   }, [goals, user]);
   useEffect(() => {
+    if (!user || !goalsReadyRef.current) return;
+    const nextItems = sortRecordsById(goals.map(normalizeCollectionRecord));
+    const nextSerialized = JSON.stringify(nextItems);
+    if (nextSerialized === lastGoalsSerializedRef.current) return;
+    lastGoalsSerializedRef.current = nextSerialized;
+    const nextIds = new Set(nextItems.map((item) => item.id));
+    const batch = writeBatch(db);
+    nextItems.forEach((item) => {
+      const { id, ...payload } = item;
+      batch.set(doc(db, "users", user.uid, "goals", id), payload, { merge: true });
+    });
+    for (const id of cloudGoalIdsRef.current) {
+      if (!nextIds.has(id)) {
+        batch.delete(doc(db, "users", user.uid, "goals", id));
+      }
+    }
+    batch.commit().catch(() => {});
+  }, [goals, user]);
+  useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "assets"), JSON.stringify(assets));
   }, [assets, user]);
   useEffect(() => {
+    if (!user || !assetsReadyRef.current) return;
+    const nextItems = sortRecordsById(assets.map(normalizeCollectionRecord));
+    const nextSerialized = JSON.stringify(nextItems);
+    if (nextSerialized === lastAssetsSerializedRef.current) return;
+    lastAssetsSerializedRef.current = nextSerialized;
+    const nextIds = new Set(nextItems.map((item) => item.id));
+    const batch = writeBatch(db);
+    nextItems.forEach((item) => {
+      const { id, ...payload } = item;
+      batch.set(doc(db, "users", user.uid, "assets", id), payload, { merge: true });
+    });
+    for (const id of cloudAssetIdsRef.current) {
+      if (!nextIds.has(id)) {
+        batch.delete(doc(db, "users", user.uid, "assets", id));
+      }
+    }
+    batch.commit().catch(() => {});
+  }, [assets, user]);
+  useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "liabilities"), JSON.stringify(liabilities));
+  }, [liabilities, user]);
+  useEffect(() => {
+    if (!user || !liabilitiesReadyRef.current) return;
+    const nextItems = sortRecordsById(liabilities.map(normalizeCollectionRecord));
+    const nextSerialized = JSON.stringify(nextItems);
+    if (nextSerialized === lastLiabilitiesSerializedRef.current) return;
+    lastLiabilitiesSerializedRef.current = nextSerialized;
+    const nextIds = new Set(nextItems.map((item) => item.id));
+    const batch = writeBatch(db);
+    nextItems.forEach((item) => {
+      const { id, ...payload } = item;
+      batch.set(doc(db, "users", user.uid, "liabilities", id), payload, { merge: true });
+    });
+    for (const id of cloudLiabilityIdsRef.current) {
+      if (!nextIds.has(id)) {
+        batch.delete(doc(db, "users", user.uid, "liabilities", id));
+      }
+    }
+    batch.commit().catch(() => {});
   }, [liabilities, user]);
   useEffect(() => {
     if (!user) return;
@@ -649,6 +887,27 @@ export default function App() {
     if (Array.isArray(portfolioSnapshots) && portfolioSnapshots.length) {
       localStorage.setItem(getStorageKey(user.uid, "portfolio-snapshots-backup"), JSON.stringify(portfolioSnapshots));
     }
+  }, [portfolioSnapshots, user]);
+  useEffect(() => {
+    if (!user || !snapshotsReadyRef.current) return;
+    const nextItems = sortRecordsById(
+      sanitizePortfolioSnapshots(holdingsStateRef.current, portfolioSnapshots).map(normalizeSnapshotRecord)
+    );
+    const nextSerialized = JSON.stringify(nextItems);
+    if (nextSerialized === lastSnapshotsSerializedRef.current) return;
+    lastSnapshotsSerializedRef.current = nextSerialized;
+    const nextIds = new Set(nextItems.map((item) => item.id));
+    const batch = writeBatch(db);
+    nextItems.forEach((item) => {
+      const { id, ...payload } = item;
+      batch.set(doc(db, "users", user.uid, "portfolioSnapshots", id), payload, { merge: true });
+    });
+    for (const id of cloudSnapshotIdsRef.current) {
+      if (!nextIds.has(id)) {
+        batch.delete(doc(db, "users", user.uid, "portfolioSnapshots", id));
+      }
+    }
+    batch.commit().catch(() => {});
   }, [portfolioSnapshots, user]);
   useEffect(() => {
     if (!user) return;
