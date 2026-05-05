@@ -27,6 +27,7 @@ import {
   doc,
   setDoc,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import LoginPage from "./components/LoginPage";
 import { CSS } from "./styles/appStyles";
@@ -138,6 +139,42 @@ function sanitizePortfolioSnapshots(holdings = [], snapshots = []) {
     .slice(0, 30);
 }
 
+function readHoldingBackup(uid) {
+  if (!uid) return { holdings: [], portfolioSnapshots: [] };
+  return {
+    holdings: safeJSON(localStorage.getItem(getStorageKey(uid, "holdings-backup")), []),
+    portfolioSnapshots: safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots-backup")), []),
+  };
+}
+
+function sortRecordsById(items = []) {
+  return [...(Array.isArray(items) ? items : [])].sort((a, b) =>
+    String(a?.id || "").localeCompare(String(b?.id || ""))
+  );
+}
+
+function cleanObject(value) {
+  return Object.fromEntries(Object.entries(value || {}).filter(([, item]) => item !== undefined));
+}
+
+function normalizeHoldingRecord(item = {}) {
+  return cleanObject({
+    ...item,
+    id: String(item.id || goalId()),
+    attachments: undefined,
+  });
+}
+
+function normalizeVaultDocRecord(item = {}) {
+  return cleanObject({
+    ...item,
+    id: String(item.id || goalId()),
+    attachments: Array.isArray(item.attachments)
+      ? item.attachments.map((file) => cleanObject(file))
+      : [],
+  });
+}
+
 export default function App() {
   const emailActionSettings = {
     url: window.location.origin,
@@ -209,11 +246,24 @@ export default function App() {
   const latestAlertsRef = useRef("");
   const profileReadyRef = useRef(false);
   const lastProfileSerializedRef = useRef("");
+  const holdingsStateRef = useRef([]);
+  const holdingsReadyRef = useRef(false);
+  const lastHoldingsSerializedRef = useRef("");
+  const cloudHoldingIdsRef = useRef(new Set());
+  const legacyHoldingsRef = useRef([]);
+  const vaultDocsReadyRef = useRef(false);
+  const lastVaultDocsSerializedRef = useRef("");
+  const cloudVaultDocIdsRef = useRef(new Set());
+  const legacyVaultDocsRef = useRef([]);
 
   useEffect(() => {
     document.body.classList.toggle("light", !darkMode);
     localStorage.setItem("finwise-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
+
+  useEffect(() => {
+    holdingsStateRef.current = holdings;
+  }, [holdings]);
 
   useEffect(() => auth.onAuthStateChanged(setUser), []);
 
@@ -306,6 +356,91 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
+    if (!user) {
+      holdingsReadyRef.current = false;
+      cloudHoldingIdsRef.current = new Set();
+      setHoldings([]);
+      return;
+    }
+    const uid = user.uid;
+    holdingsReadyRef.current = false;
+    return onSnapshot(collection(db, "users", uid, "holdings"), async (snap) => {
+      const cloudItems = sortRecordsById(
+        snap.docs.map((item) => normalizeHoldingRecord({ id: item.id, ...item.data() }))
+      );
+      cloudHoldingIdsRef.current = new Set(cloudItems.map((item) => item.id));
+
+      let nextItems = cloudItems;
+      if (!cloudItems.length) {
+        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "holdings")), []);
+        const localBackup = readHoldingBackup(uid).holdings;
+        const strongestLocal = Array.isArray(localFallback) && localFallback.length
+          ? localFallback
+          : Array.isArray(localBackup) && localBackup.length
+            ? localBackup
+            : Array.isArray(legacyHoldingsRef.current) && legacyHoldingsRef.current.length
+              ? legacyHoldingsRef.current
+              : [];
+        if (strongestLocal.length) {
+          nextItems = sortRecordsById(strongestLocal.map(normalizeHoldingRecord));
+          const batch = writeBatch(db);
+          nextItems.forEach((item) => {
+            const { id, ...payload } = item;
+            batch.set(doc(db, "users", uid, "holdings", id), payload, { merge: true });
+          });
+          await batch.commit();
+          cloudHoldingIdsRef.current = new Set(nextItems.map((item) => item.id));
+        }
+      }
+
+      lastHoldingsSerializedRef.current = JSON.stringify(nextItems);
+      holdingsReadyRef.current = true;
+      setHoldings(nextItems);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      vaultDocsReadyRef.current = false;
+      cloudVaultDocIdsRef.current = new Set();
+      setVaultDocs([]);
+      return;
+    }
+    const uid = user.uid;
+    vaultDocsReadyRef.current = false;
+    return onSnapshot(collection(db, "users", uid, "vaultDocs"), async (snap) => {
+      const cloudItems = sortRecordsById(
+        snap.docs.map((item) => normalizeVaultDocRecord({ id: item.id, ...item.data() }))
+      );
+      cloudVaultDocIdsRef.current = new Set(cloudItems.map((item) => item.id));
+
+      let nextItems = cloudItems;
+      if (!cloudItems.length) {
+        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "vault-docs")), []);
+        const strongestLocal = Array.isArray(localFallback) && localFallback.length
+          ? localFallback
+          : Array.isArray(legacyVaultDocsRef.current) && legacyVaultDocsRef.current.length
+            ? legacyVaultDocsRef.current
+            : [];
+        if (strongestLocal.length) {
+          nextItems = sortRecordsById(strongestLocal.map(normalizeVaultDocRecord));
+          const batch = writeBatch(db);
+          nextItems.forEach((item) => {
+            const { id, ...payload } = item;
+            batch.set(doc(db, "users", uid, "vaultDocs", id), payload, { merge: true });
+          });
+          await batch.commit();
+          cloudVaultDocIdsRef.current = new Set(nextItems.map((item) => item.id));
+        }
+      }
+
+      lastVaultDocsSerializedRef.current = JSON.stringify(nextItems);
+      vaultDocsReadyRef.current = true;
+      setVaultDocs(nextItems);
+    });
+  }, [user]);
+
+  useEffect(() => {
     let disposed = false;
     let timer = null;
 
@@ -367,13 +502,11 @@ export default function App() {
         goals: safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []),
         assets: safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []),
         liabilities: safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []),
-        holdings: safeJSON(localStorage.getItem(getStorageKey(uid, "holdings")), []),
         portfolioSnapshots: safeJSON(localStorage.getItem(getStorageKey(uid, "portfolio-snapshots")), []),
         marketDisplayCurrency: localStorage.getItem(getStorageKey(uid, "market-display-currency")) || "INR",
         language: localStorage.getItem(getStorageKey(uid, "language")) || "en",
         onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...safeJSON(localStorage.getItem(getStorageKey(uid, "onboarding")), {}) },
         plannerState: { ...DEFAULT_PLANNER_STATE, ...safeJSON(localStorage.getItem(getStorageKey(uid, "planner-state")), {}) },
-        vaultDocs: safeJSON(localStorage.getItem(getStorageKey(uid, "vault-docs")), []),
         aiConfig: { provider: "openrouter", model: "openrouter/free", freeModel: "openrouter/free", ...safeJSON(localStorage.getItem(getStorageKey(uid, "ai-config")), {}) },
         budget: localStorage.getItem(getStorageKey(uid, "budget")) || "",
         role: localStorage.getItem(getStorageKey(uid, "role")) || "user",
@@ -383,30 +516,31 @@ export default function App() {
         })(),
       };
 
+      const cloudData = snap.exists() ? snap.data() || {} : {};
+      legacyHoldingsRef.current = Array.isArray(cloudData.holdings) ? cloudData.holdings : [];
+      legacyVaultDocsRef.current = Array.isArray(cloudData.vaultDocs) ? cloudData.vaultDocs : [];
+
       const data = snap.exists()
         ? {
-            ...localFallback,
-            ...snap.data(),
-            aiConfig: { ...localFallback.aiConfig, ...(snap.data()?.aiConfig || {}) },
-          }
+          ...localFallback,
+          ...cloudData,
+          aiConfig: { ...localFallback.aiConfig, ...(cloudData.aiConfig || {}) },
+        }
         : localFallback;
 
-      const safeHoldings = Array.isArray(data.holdings) ? data.holdings : [];
       const safeSnapshots = sanitizePortfolioSnapshots(
-        safeHoldings,
+        holdingsStateRef.current,
         Array.isArray(data.portfolioSnapshots) ? data.portfolioSnapshots : []
       );
 
       setGoals(Array.isArray(data.goals) ? data.goals : []);
       setAssets(Array.isArray(data.assets) ? data.assets : []);
       setLiabilities(Array.isArray(data.liabilities) ? data.liabilities : []);
-      setHoldings(safeHoldings);
       setPortfolioSnapshots(safeSnapshots);
       setMarketDisplayCurrency(data.marketDisplayCurrency || "INR");
       setLanguage(data.language || "en");
       setOnboardingState({ ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) });
       setPlannerState({ ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) });
-      setVaultDocs(Array.isArray(data.vaultDocs) ? data.vaultDocs : []);
       setAiConfig(data.aiConfig || localFallback.aiConfig);
       setBudget(data.budget || "");
       setBudgetInput(data.budget || "");
@@ -417,13 +551,11 @@ export default function App() {
         goals: Array.isArray(data.goals) ? data.goals : [],
         assets: Array.isArray(data.assets) ? data.assets : [],
         liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
-        holdings: Array.isArray(data.holdings) ? data.holdings : [],
         portfolioSnapshots: safeSnapshots,
         marketDisplayCurrency: data.marketDisplayCurrency || "INR",
         language: data.language || "en",
         onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
         plannerState: { ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) },
-        vaultDocs: Array.isArray(data.vaultDocs) ? data.vaultDocs : [],
         aiConfig: data.aiConfig || localFallback.aiConfig,
         budget: data.budget || "",
         role: data.role || "user",
@@ -436,13 +568,11 @@ export default function App() {
           goals: Array.isArray(data.goals) ? data.goals : [],
           assets: Array.isArray(data.assets) ? data.assets : [],
           liabilities: Array.isArray(data.liabilities) ? data.liabilities : [],
-          holdings: Array.isArray(data.holdings) ? data.holdings : [],
           portfolioSnapshots: safeSnapshots,
           marketDisplayCurrency: data.marketDisplayCurrency || "INR",
           language: data.language || "en",
           onboardingState: { ...DEFAULT_ONBOARDING_STATE, ...(data.onboardingState || {}) },
           plannerState: { ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) },
-          vaultDocs: Array.isArray(data.vaultDocs) ? data.vaultDocs : [],
           aiConfig: data.aiConfig || localFallback.aiConfig,
           budget: data.budget || "",
           role: data.role || "user",
@@ -456,18 +586,16 @@ export default function App() {
     goals,
     assets,
     liabilities,
-    holdings,
     portfolioSnapshots,
     marketDisplayCurrency,
     language,
     onboardingState,
     plannerState,
-    vaultDocs,
     aiConfig,
     budget,
     role: userRole,
     notificationsEnabled,
-  }), [goals, assets, liabilities, holdings, portfolioSnapshots, marketDisplayCurrency, language, onboardingState, plannerState, vaultDocs, aiConfig, budget, userRole, notificationsEnabled]);
+  }), [goals, assets, liabilities, portfolioSnapshots, marketDisplayCurrency, language, onboardingState, plannerState, aiConfig, budget, userRole, notificationsEnabled]);
 
   useEffect(() => {
     if (!user || !profileReadyRef.current) return;
@@ -492,10 +620,35 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "holdings"), JSON.stringify(holdings));
+    if (Array.isArray(holdings) && holdings.length) {
+      localStorage.setItem(getStorageKey(user.uid, "holdings-backup"), JSON.stringify(holdings));
+    }
+  }, [holdings, user]);
+  useEffect(() => {
+    if (!user || !holdingsReadyRef.current) return;
+    const nextItems = sortRecordsById(holdings.map(normalizeHoldingRecord));
+    const nextSerialized = JSON.stringify(nextItems);
+    if (nextSerialized === lastHoldingsSerializedRef.current) return;
+    lastHoldingsSerializedRef.current = nextSerialized;
+    const nextIds = new Set(nextItems.map((item) => item.id));
+    const batch = writeBatch(db);
+    nextItems.forEach((item) => {
+      const { id, ...payload } = item;
+      batch.set(doc(db, "users", user.uid, "holdings", id), payload, { merge: true });
+    });
+    for (const id of cloudHoldingIdsRef.current) {
+      if (!nextIds.has(id)) {
+        batch.delete(doc(db, "users", user.uid, "holdings", id));
+      }
+    }
+    batch.commit().catch(() => {});
   }, [holdings, user]);
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "portfolio-snapshots"), JSON.stringify(portfolioSnapshots));
+    if (Array.isArray(portfolioSnapshots) && portfolioSnapshots.length) {
+      localStorage.setItem(getStorageKey(user.uid, "portfolio-snapshots-backup"), JSON.stringify(portfolioSnapshots));
+    }
   }, [portfolioSnapshots, user]);
   useEffect(() => {
     if (!user) return;
@@ -516,6 +669,25 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     localStorage.setItem(getStorageKey(user.uid, "vault-docs"), JSON.stringify(vaultDocs));
+  }, [vaultDocs, user]);
+  useEffect(() => {
+    if (!user || !vaultDocsReadyRef.current) return;
+    const nextItems = sortRecordsById(vaultDocs.map(normalizeVaultDocRecord));
+    const nextSerialized = JSON.stringify(nextItems);
+    if (nextSerialized === lastVaultDocsSerializedRef.current) return;
+    lastVaultDocsSerializedRef.current = nextSerialized;
+    const nextIds = new Set(nextItems.map((item) => item.id));
+    const batch = writeBatch(db);
+    nextItems.forEach((item) => {
+      const { id, ...payload } = item;
+      batch.set(doc(db, "users", user.uid, "vaultDocs", id), payload, { merge: true });
+    });
+    for (const id of cloudVaultDocIdsRef.current) {
+      if (!nextIds.has(id)) {
+        batch.delete(doc(db, "users", user.uid, "vaultDocs", id));
+      }
+    }
+    batch.commit().catch(() => {});
   }, [vaultDocs, user]);
   useEffect(() => {
     if (!user) return;
