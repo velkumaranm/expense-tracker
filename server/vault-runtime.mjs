@@ -62,6 +62,7 @@ export async function uploadVaultAttachment({
   const pathname = buildBlobPath(userId, docId, attachmentId, fileName);
   const blob = await put(pathname, decoded.buffer, {
     access: "private",
+    allowOverwrite: true,
     addRandomSuffix: false,
     token,
     contentType: finalContentType,
