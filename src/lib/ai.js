@@ -95,6 +95,8 @@ export async function requestAIQuery(payload) {
 }
 
 export function answerLocalFinanceQuestion(question, context, report) {
+  const language = context.language || "en";
+  const tr = (key, fallback = "") => getTranslation(language, key, fallback);
   const q = question.toLowerCase();
   const top = context.topCategories?.[0];
   const savingsRate = context.totals?.savingsRate || 0;
@@ -106,47 +108,49 @@ export function answerLocalFinanceQuestion(question, context, report) {
 
   if (q.includes("save") || q.includes("cut") || q.includes("reduce")) {
     return [
-      top ? `${top.name} is the first place I would inspect, because it is currently your largest expense bucket at ${fmtINR(top.value)}.` : "Your biggest savings opportunity will usually come from the top expense category.",
-      report.opportunities[1] || "Trim recurring discretionary spend before touching long-term investments.",
+      top
+        ? `${top.name} ${tr("ai.answerInspectTop", "is the first place to inspect because it is your largest expense bucket at")} ${fmtINR(top.value)}.`
+        : tr("ai.answerTopGeneric", "Your biggest savings opportunity will usually come from the top expense category."),
+      report.opportunities[1] || tr("ai.answerTrimRecurring", "Trim recurring discretionary spend before touching long-term investments."),
       savingsRate < 15
-        ? "Your savings rate is still soft, so I would protect savings first and then optimize smaller categories."
-        : "Your savings rate is already decent, so focus on waste and low-value recurring spend rather than cutting aggressively everywhere.",
+        ? tr("ai.answerSavingsSoft", "Your savings rate is still soft, so protect savings first and then optimize smaller categories.")
+        : tr("ai.answerSavingsDecent", "Your savings rate is already decent, so focus on waste and low-value recurring spend rather than cutting aggressively everywhere."),
     ].join(" ");
   }
 
   if (q.includes("invest")) {
     return [
-      `You are currently investing ${fmtINR(investment)} in the selected period.`,
+      `${tr("ai.answerInvestingNow", "You are currently investing")} ${fmtINR(investment)} ${tr("ai.answerSelectedPeriod", "in the selected period.")}`,
       portfolio.holdingsCount
-        ? `Tracked market holdings are worth ${fmtINR(portfolio.currentValue || 0)} versus an invested basis of ${fmtINR(portfolio.investedValue || 0)}.`
-        : "No live market holdings are being tracked yet, so this answer is based on cash-flow contributions only.",
+        ? `${tr("ai.answerPortfolioWorth", "Tracked market holdings are worth")} ${fmtINR(portfolio.currentValue || 0)} ${tr("ai.answerVersusInvested", "versus an invested basis of")} ${fmtINR(portfolio.investedValue || 0)}.`
+        : tr("ai.answerNoHoldings", "No live market holdings are being tracked yet, so this answer is based on cash-flow contributions only."),
       report.investmentIdeas[0],
       savingsRate < 10
-        ? "I would improve cash-flow stability before taking materially more portfolio risk."
-        : "If your emergency buffer is intact, increasing automated investing is the cleanest next lever.",
+        ? tr("ai.answerImproveStability", "Improve cash-flow stability before taking materially more portfolio risk.")
+        : tr("ai.answerEmergencyIntact", "If your emergency buffer is intact, increasing automated investing is the cleanest next lever."),
     ].join(" ");
   }
 
   if (q.includes("insurance")) {
     return [
-      `Insurance outflow in the selected view is ${fmtINR(insurance)}.`,
+      `${tr("ai.answerInsuranceOutflow", "Insurance outflow in the selected view is")} ${fmtINR(insurance)}.`,
       insurance > 0
-        ? "Review whether each policy is still necessary, competitively priced, and sized to the real risk it is covering."
-        : "You do not have much visible insurance spend in the current data, so the next step is checking whether important protection gaps exist.",
+        ? tr("ai.answerInsuranceReview", "Review whether each policy is still necessary, competitively priced, and sized to the real risk it is covering.")
+        : tr("ai.answerInsuranceGap", "You do not have much visible insurance spend in the current data, so check whether important protection gaps exist."),
     ].join(" ");
   }
 
   if (q.includes("net worth") || q.includes("wealth")) {
-    return `Your tracked net worth is ${fmtINR(netWorth)}. That figure is being built from tracked cash reserve, logged investments, manual assets, and liabilities, so the quality of the answer improves as those sections stay updated.`;
+    return `${tr("ai.answerNetWorth", "Your tracked net worth is")} ${fmtINR(netWorth)}. ${tr("ai.answerNetWorthBasis", "This is built from tracked cash reserve, logged investments, manual assets, and liabilities, so the answer improves as those sections stay updated.")}`;
   }
 
   if (q.includes("spend") || q.includes("expense")) {
     return [
-      `Current selected-period expense is ${fmtINR(monthlyExpense)}.`,
-      top ? `${top.name} is your largest spend area.` : "You do not have a dominant spend bucket yet.",
+      `${tr("ai.answerCurrentExpense", "Current selected-period expense is")} ${fmtINR(monthlyExpense)}.`,
+      top ? `${top.name} ${tr("ai.answerLargestSpendArea", "is your largest spend area.")}` : tr("ai.answerNoDominantSpend", "You do not have a dominant spend bucket yet."),
       context.unusualTransactions?.length
-        ? `I also see ${context.unusualTransactions.length} unusual transaction${context.unusualTransactions.length > 1 ? "s" : ""} worth reviewing.`
-        : "No unusual transactions are standing out right now.",
+        ? `${tr("ai.answerUnusualTx", "Unusual transactions worth reviewing")}: ${context.unusualTransactions.length}.`
+        : tr("ai.answerNoUnusual", "No unusual transactions are standing out right now."),
     ].join(" ");
   }
 
@@ -154,6 +158,6 @@ export function answerLocalFinanceQuestion(question, context, report) {
     report.headline,
     report.opportunities[0],
     report.tips[0],
-    "If you want a sharper answer, ask about spending cuts, investing, insurance, savings rate, or net worth.",
+    tr("ai.answerSharper", "For a sharper answer, ask about spending cuts, investing, insurance, savings rate, or net worth."),
   ].join(" ");
 }

@@ -8,6 +8,7 @@ const YAHOO_ENDPOINTS = [
   "https://query2.finance.yahoo.com/v8/finance/quote",
 ];
 const COINGECKO_SIMPLE = "https://api.coingecko.com/api/v3/simple/price";
+const COINGECKO_SEARCH = "https://api.coingecko.com/api/v3/search";
 const ALPHA_MIN_INTERVAL_MS = 1200;
 const TWELVE_MIN_INTERVAL_MS = 150;
 const FINNHUB_MIN_INTERVAL_MS = 1100;
@@ -293,7 +294,15 @@ async function fetchYahooChartQuote(symbol) {
 }
 
 function normalizeCryptoId(symbol, name = "") {
-  const upper = String(symbol || "").trim().toUpperCase();
+  const original = String(symbol || "").trim();
+  const originalLower = original.toLowerCase();
+  if (originalLower.startsWith("coingecko:")) {
+    return originalLower.replace("coingecko:", "").trim();
+  }
+  if (/^[a-z0-9-]+$/.test(originalLower) && originalLower.includes("-")) {
+    return originalLower;
+  }
+  const upper = original.toUpperCase();
   const base = upper.includes("/")
     ? upper.split("/")[0]
     : upper.includes(":")
@@ -474,7 +483,7 @@ function buildStockSearchError() {
 }
 
 function buildCryptoSearchError() {
-  return "Configure TWELVE_DATA_API_KEY, FINNHUB_API_KEY, or ALPHA_VANTAGE_API_KEY to search and refresh crypto holdings.";
+  return "Crypto search is unavailable right now. Try a coin name or ticker again in a moment.";
 }
 
 async function searchStocksWithTwelve(q) {
@@ -519,6 +528,34 @@ async function searchCryptoWithTwelve(q) {
       currency: item.currency || "USD",
       source: "twelve-data",
     }));
+}
+
+async function searchCryptoWithCoinGecko(q) {
+  const data = await fetchJson(toUrl(COINGECKO_SEARCH, { query: q }));
+  const coins = Array.isArray(data?.coins) ? data.coins : [];
+  return coins
+    .slice()
+    .sort((a, b) => {
+      const rankA = Number(a?.market_cap_rank || Number.MAX_SAFE_INTEGER);
+      const rankB = Number(b?.market_cap_rank || Number.MAX_SAFE_INTEGER);
+      return rankA - rankB;
+    })
+    .slice(0, 20)
+    .map((coin) => {
+      const ticker = String(coin?.symbol || "").trim().toUpperCase();
+      const id = String(coin?.id || "").trim().toLowerCase();
+      return {
+        id: `coingecko:${id}`,
+        kind: "crypto",
+        symbol: ticker ? `${ticker}/USD` : id,
+        quoteSymbol: `coingecko:${id}`,
+        name: coin?.name || ticker || id,
+        exchange: coin?.market_cap_rank ? `CoinGecko rank #${coin.market_cap_rank}` : "CoinGecko",
+        currency: "USD",
+        source: "coingecko",
+      };
+    })
+    .filter((item) => item.quoteSymbol !== "coingecko:");
 }
 
 async function searchAnyWithFinnhub(q, kind) {
@@ -601,19 +638,23 @@ export async function searchMarketInstruments(kind, query) {
 
   const providers = providerAvailability();
   if (kind === "crypto") {
-    if (!providers.twelveData && !providers.finnhub && !providers.alphaVantage) {
-      throw new Error(buildCryptoSearchError());
-    }
     const tries = [
+      () => searchCryptoWithCoinGecko(q),
       () => searchCryptoWithTwelve(q),
       () => searchAnyWithFinnhub(q, "crypto"),
       () => searchAnyWithAlpha(q, "crypto"),
     ];
+    const failures = [];
     for (const run of tries) {
       try {
         const results = await run();
         if (results.length) return results;
-      } catch {}
+      } catch (error) {
+        failures.push(error?.message || "Search provider failed");
+      }
+    }
+    if (!providers.twelveData && !providers.finnhub && !providers.alphaVantage && failures.length) {
+      throw new Error(buildCryptoSearchError());
     }
     return [];
   }
@@ -816,15 +857,17 @@ async function refreshStockHolding(holding) {
 }
 
 async function refreshCryptoHolding(holding) {
-  const symbol = String(holding.symbol || "").trim().toUpperCase();
-  if (!symbol) throw new Error(`Missing symbol for ${holding.name || "crypto holding"}`);
+  const lookupSymbol = String(holding.quoteSymbol || holding.symbol || "").trim();
+  const normalizedLookup = lookupSymbol.toUpperCase();
+  const displaySymbol = String(holding.symbol || lookupSymbol || "").trim().toUpperCase();
+  if (!lookupSymbol) throw new Error(`Missing symbol for ${holding.name || "crypto holding"}`);
   let latest;
   let source = "";
   const failures = [];
   if (process.env.TWELVE_DATA_API_KEY) {
     try {
       const data = await fetchTwelveJson("/time_series", {
-        symbol,
+        symbol: normalizedLookup,
         interval: "1day",
         outputsize: 1,
         apikey: process.env.TWELVE_DATA_API_KEY,
@@ -843,7 +886,7 @@ async function refreshCryptoHolding(holding) {
   if (!latest && process.env.FINNHUB_API_KEY) {
     try {
       const data = await fetchFinnhubJson("/quote", {
-        symbol,
+        symbol: normalizedLookup,
         token: process.env.FINNHUB_API_KEY,
       });
       const price = normalizeNumber(data?.c);
@@ -859,15 +902,15 @@ async function refreshCryptoHolding(holding) {
     try {
       const data = await fetchAlphaJson({
         function: "DIGITAL_CURRENCY_DAILY",
-        symbol: symbol.split("/")[0],
-        market: symbol.split("/")[1] || "USD",
+        symbol: normalizedLookup.split("/")[0],
+        market: normalizedLookup.split("/")[1] || "USD",
         apikey: process.env.ALPHA_VANTAGE_API_KEY,
       });
       const series = data?.["Time Series (Digital Currency Daily)"];
       if (series && typeof series === "object") {
         const [date] = Object.keys(series).sort((a, b) => new Date(b) - new Date(a));
         const point = series?.[date];
-        const market = symbol.split("/")[1] || "USD";
+        const market = normalizedLookup.split("/")[1] || "USD";
         const price = normalizeNumber(point?.[`4b. close (${market})`] || point?.["4a. close (USD)"]);
         if (date && price) {
           ensureFreshQuote(date, "Alpha Vantage", CRYPTO_QUOTE_MAX_AGE_DAYS);
@@ -881,11 +924,11 @@ async function refreshCryptoHolding(holding) {
   }
   if (!latest) {
     try {
-      const coinId = normalizeCryptoId(symbol, holding?.name);
+      const coinId = normalizeCryptoId(lookupSymbol, holding?.name);
       if (coinId) {
         const data = await fetchCoinGeckoSimple(coinId, ["usd", "inr"]);
         const point = data?.[coinId];
-        const market = symbol.includes("/INR") ? "INR" : "USD";
+        const market = displaySymbol.includes("/INR") || normalizedLookup.includes("/INR") ? "INR" : "USD";
         const price = normalizeNumber(market === "INR" ? point?.inr : point?.usd);
         const updatedAt = point?.last_updated_at
           ? new Date(Number(point.last_updated_at) * 1000).toISOString()
@@ -907,13 +950,14 @@ async function refreshCryptoHolding(holding) {
   const currentValue = units * latest.price;
   return {
     ...holding,
-    symbol,
+    symbol: displaySymbol || normalizedLookup,
+    quoteSymbol: holding.quoteSymbol || lookupSymbol,
     currentPrice: latest.price,
     priceDate: latest.date,
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
-    currency: symbol.includes("/INR") ? "INR" : "USD",
+    currency: displaySymbol.includes("/INR") || normalizedLookup.includes("/INR") ? "INR" : "USD",
     source,
     priceLabel: source === "finnhub" ? "Latest quote" : source === "coingecko" ? "CoinGecko spot" : "Latest close",
     refreshedAt: new Date().toISOString(),

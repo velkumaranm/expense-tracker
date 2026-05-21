@@ -57,7 +57,7 @@ export default function AIInsights({
   onClearChat,
   askLoading,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [question, setQuestion] = useState("");
   const externalAIReady = isAdmin
     ? backendHealth?.providers?.[aiConfig.provider]
@@ -75,7 +75,7 @@ export default function AIInsights({
     totals.income > 0 ? t("ai.promptAllocation", "Based on my current income, how much should go to spending, investing, and emergency reserves?") : "",
     t("ai.promptNextActions", "What are the next three actions that would improve my finances this month?"),
   ].filter(Boolean);
-  const modelSections = parseModelSections(aiState.externalText);
+  const modelSections = aiState.language === language ? parseModelSections(aiState.externalText) : [];
 
   return (
     <>

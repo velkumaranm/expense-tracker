@@ -139,15 +139,31 @@ export function healthPayload({ includeSensitive = false, viewerRole = "user" } 
   };
 }
 
+const LANGUAGE_NAMES = {
+  en: "English",
+  ta: "Tamil",
+  ml: "Malayalam",
+  kn: "Kannada",
+  te: "Telugu",
+  hi: "Hindi",
+};
+
+function languageInstruction(context = {}) {
+  const code = context.language || "en";
+  if (code === "en") return "Write the entire answer in English.";
+  const languageName = LANGUAGE_NAMES[code] || code;
+  return `Write the entire answer in ${languageName}. Do not mix in another Indian language. Keep only app names, ticker symbols, financial product acronyms, and user-entered category names unchanged.`;
+}
+
 const buildPrompt = (context) =>
-  `You are a personal finance analyst. Analyze this structured data and return concise, actionable recommendations with sections: Overview, Risks, Savings Opportunities, Investments, Insurance, and Next Actions. If context.language is not "en", write the answer in that selected app language while keeping financial product names and user-entered categories unchanged.\n\n${JSON.stringify(
+  `You are a personal finance analyst. Analyze this structured data and return concise, actionable recommendations with sections: Overview, Risks, Savings Opportunities, Investments, Insurance, and Next Actions. ${languageInstruction(context)}\n\n${JSON.stringify(
     context,
     null,
     2
   )}`;
 
 const buildQueryPrompt = ({ context, question, history = [] }) =>
-  `You are Finwise AI, a practical and thoughtful personal finance assistant. Answer the user's question using the structured financial data below. Be specific, concise, and actionable. If the data is incomplete, say so clearly. If context.language is not "en", answer in that selected app language while keeping financial product names and user-entered categories unchanged.\n\nContext:\n${JSON.stringify(
+  `You are Finwise AI, a practical and thoughtful personal finance assistant. Answer the user's question using the structured financial data below. Be specific, concise, and actionable. If the data is incomplete, say so clearly. ${languageInstruction(context)}\n\nContext:\n${JSON.stringify(
     context,
     null,
     2

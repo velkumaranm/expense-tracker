@@ -117,7 +117,10 @@ function normalizeStockSelection(item) {
   if (kind !== "stock" || !rawSymbol) {
     return {
       symbol: rawSymbol,
-      quoteSymbol: String(item?.quoteSymbol || rawSymbol || "").trim().toUpperCase(),
+      quoteSymbol:
+        kind === "crypto"
+          ? String(item?.quoteSymbol || rawSymbol || "").trim()
+          : String(item?.quoteSymbol || rawSymbol || "").trim().toUpperCase(),
     };
   }
   if (rawSymbol.includes(".") || rawSymbol.includes(":") || rawSymbol.includes("=") || rawSymbol.includes("/")) {
@@ -446,14 +449,18 @@ export default function PortfolioHoldings({
     if (!form.name || !form.units || !form.costPerUnit) return;
     if (["stock", "crypto", "commodity"].includes(form.kind) && !form.symbol) return;
     if (form.kind === "mutualFund" && !form.schemeCode) return;
+    const resolvedQuoteSymbol =
+      form.kind === "crypto"
+        ? form.quoteSymbol.trim() || suggestQuoteSymbol(form.kind, form.name, form.symbol)
+        : form.quoteSymbol.trim().toUpperCase() || suggestQuoteSymbol(form.kind, form.name, form.symbol);
     const normalized = {
       kind: form.kind,
       name: form.name.trim(),
       symbol: form.symbol.trim().toUpperCase(),
-      quoteSymbol: (form.quoteSymbol.trim().toUpperCase() || suggestQuoteSymbol(form.kind, form.name, form.symbol)),
+      quoteSymbol: resolvedQuoteSymbol,
       currency: defaultCurrencyForDraft({
         ...form,
-        quoteSymbol: form.quoteSymbol.trim().toUpperCase() || suggestQuoteSymbol(form.kind, form.name, form.symbol),
+        quoteSymbol: resolvedQuoteSymbol,
       }),
       schemeCode: form.schemeCode.trim(),
       units: Number(form.units),

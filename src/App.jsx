@@ -245,6 +245,7 @@ export default function App() {
     error: "",
     report: null,
     externalText: "",
+    language,
   });
   const [activeTab, setActiveTab] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1487,7 +1488,7 @@ export default function App() {
     : Boolean(backendHealth?.aiEnabled);
 
   const runAIInsights = async () => {
-    setAiState((s) => ({ ...s, loading: true, error: "", externalText: "", report: heuristicReport }));
+    setAiState((s) => ({ ...s, loading: true, error: "", externalText: "", report: heuristicReport, language }));
     try {
       let externalText = "";
       if (externalAIReady) {
@@ -1515,10 +1516,10 @@ export default function App() {
         });
         externalText = response.text || "";
       }
-      setAiState({ loading: false, error: "", externalText, report: heuristicReport });
+      setAiState({ loading: false, error: "", externalText, report: heuristicReport, language });
       showToast("Insights refreshed.");
     } catch (e) {
-      setAiState({ loading: false, error: e.message || "AI request failed", externalText: "", report: heuristicReport });
+      setAiState({ loading: false, error: e.message || "AI request failed", externalText: "", report: heuristicReport, language });
       showToast("AI request failed. Using local insights.", "warning");
     }
   };
@@ -1579,9 +1580,22 @@ export default function App() {
 
   useEffect(() => {
     if (!aiState.report && expenses.length) {
-      setAiState((s) => ({ ...s, report: heuristicReport }));
+      setAiState((s) => ({ ...s, report: heuristicReport, language }));
     }
-  }, [aiState.report, expenses.length, heuristicReport]);
+  }, [aiState.report, expenses.length, heuristicReport, language]);
+
+  useEffect(() => {
+    setAiState((s) => {
+      if (s.language === language) return s;
+      return {
+        ...s,
+        error: "",
+        externalText: "",
+        report: heuristicReport,
+        language,
+      };
+    });
+  }, [language, heuristicReport]);
 
   const filtered = recs
     .filter((e) => (filterType === "all" ? true : e.type === filterType))
