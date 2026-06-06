@@ -55,6 +55,7 @@ import {
 } from "./lib/utils";
 import { fetchMarketFx } from "./lib/market";
 import { I18nProvider, getTranslation } from "./lib/i18n";
+import { ALL_CATS } from "./lib/constants";
 import {
   authenticateWithLocalPasskey,
   createLocalPasskey,
@@ -249,6 +250,8 @@ export default function App() {
   });
   const [activeTab, setActiveTab] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [lastUndo, setLastUndo] = useState(null);
   const [toast, setToast] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(toYYYYMM(new Date()));
   const [passkeyProfiles, setPasskeyProfiles] = useState(() => getStoredPasskeys());
@@ -986,6 +989,25 @@ export default function App() {
     toastTimerRef.current = setTimeout(() => setToast(null), 3500);
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      const target = event.target;
+      const isTyping = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT";
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+      } else if (!isTyping && event.key === "/") {
+        event.preventDefault();
+        setCommandOpen(true);
+      } else if (event.key === "Escape") {
+        setCommandOpen(false);
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const handleLogin = async (e, p, rememberMe = true) => {
     await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
     return signInWithEmailAndPassword(auth, e, p);
@@ -1116,8 +1138,12 @@ export default function App() {
   };
 
   const deleteExpense = async (id) => {
+    const removed = expenses.find((item) => item.id === id);
     await deleteDoc(doc(db, "users", user.uid, "expenses", id));
-    showToast("Transaction removed.", "error");
+    if (removed) {
+      setLastUndo({ type: "delete-expense", affected: [removed], createdAt: Date.now() });
+    }
+    showToast("Transaction removed. Undo is available.", "error");
   };
 
   const editExpense = (item) => {
@@ -1396,6 +1422,179 @@ export default function App() {
   if (unusualTransactions.length) alerts.push({ title: t("dashboard.alertUnusualTitle", "Unusual transactions detected"), body: `${unusualTransactions.length} ${t("dashboard.alertUnusualBody", "transaction(s) look materially larger than category norms.")}`, tone: "warn" });
   if (recurringOutflow > 0 && totals.income > 0 && recurringOutflow > totals.income * 0.35) alerts.push({ title: t("dashboard.alertRecurringHeavy", "Recurring obligations are heavy"), body: t("dashboard.alertRecurringHeavyBody", "Bills and recurring commitments are consuming a large share of monthly income."), tone: "info" });
   if (!alerts.length) alerts.push({ title: t("dashboard.healthyRhythm", "Healthy rhythm"), body: t("dashboard.healthyRhythmBody", "No urgent warnings from budgets, anomalies, or recurring commitments."), tone: "good" });
+
+  const duplicateTransactionCount = useMemo(() => {
+    const seen = new Map();
+    expenses.forEach((item) => {
+      const key = [
+        item.date || "",
+        item.type || "",
+        item.category || "",
+        Number(item.amount || 0).toFixed(2),
+        String(item.note || "").trim().toLowerCase(),
+      ].join("|");
+      seen.set(key, (seen.get(key) || 0) + 1);
+    });
+    return [...seen.values()].reduce((sum, count) => sum + Math.max(count - 1, 0), 0);
+  }, [expenses]);
+
+  const smartRuleSuggestions = useMemo(() => {
+    const rules = [
+      { type: "expense", category: "Subscriptions", test: /netflix|spotify|prime|hotstar|youtube|icloud|apple|google one|canva|subscription/i },
+      { type: "expense", category: "EMI / Loan", test: /\bemi\b|loan|mortgage|repayment/i },
+      { type: "expense", category: "Home & Rent", test: /rent|lease|maintenance/i },
+      { type: "expense", category: "Fuel", test: /fuel|petrol|diesel|shell|bharat petroleum|indian oil|hpcl/i },
+      { type: "expense", category: "Medicines", test: /medicine|pharmacy|apollo pharmacy|medplus|tablet|clinic/i },
+      { type: "income", category: "Salary", test: /salary|payroll|wage|monthly pay/i },
+      { type: "insurance", category: "Term Life Insurance", test: /term life|life insurance/i },
+      { type: "insurance", category: "Health Insurance — Family", test: /health insurance|medical policy|family floater/i },
+    ];
+    return expenses.flatMap((item) => {
+      const haystack = `${item.category || ""} ${item.note || ""}`.toLowerCase();
+      const match = rules.find((rule) =>
+        rule.type === item.type &&
+        item.category !== rule.category &&
+        ALL_CATS[item.type]?.includes(rule.category) &&
+        rule.test.test(haystack)
+      );
+      if (!match) return [];
+      return [{
+        id: item.id,
+        date: item.date,
+        amount: Number(item.amount || 0),
+        note: item.note || "",
+        from: item.category,
+        to: match.category,
+        type: item.type,
+      }];
+    }).slice(0, 30);
+  }, [expenses]);
+
+  const dataConfidence = useMemo(() => {
+    const now = Date.now();
+    const staleMarketPrices = holdings.filter((item) => {
+      if (!["stock", "mutual-fund", "crypto", "commodity"].includes(item.kind)) return false;
+      const stamp = item.refreshedAt || item.priceDate || item.lastUpdatedAt || item.updatedAt || "";
+      if (!stamp) return true;
+      const time = new Date(stamp).getTime();
+      if (Number.isNaN(time)) return true;
+      return now - time > 3 * 24 * 60 * 60 * 1000;
+    }).length;
+    const failedVaultUploads = vaultDocs.reduce((sum, item) =>
+      sum + (item.attachments || []).filter((file) => file?.syncStatus === "error").length, 0);
+    const pendingVaultUploads = vaultDocs.reduce((sum, item) =>
+      sum + (item.attachments || []).filter((file) => ["local", "syncing"].includes(file?.syncStatus)).length, 0);
+    const missingCategories = expenses.filter((item) => !ALL_CATS[item.type]?.includes(item.category)).length;
+    const issues = [
+      staleMarketPrices,
+      failedVaultUploads,
+      pendingVaultUploads,
+      missingCategories,
+      duplicateTransactionCount,
+    ].filter(Boolean).length;
+    return {
+      score: Math.max(55, 100 - issues * 9 - Math.min(staleMarketPrices, 6) * 2),
+      firestore: user ? "Connected" : "Offline",
+      lastBackup: expenses[0]?.date || holdings[0]?.refreshedAt || vaultDocs[0]?.renewalDate || "Not available",
+      staleMarketPrices,
+      failedVaultUploads,
+      pendingVaultUploads,
+      missingCategories,
+      duplicateTransactionCount,
+      smartRuleSuggestions: smartRuleSuggestions.length,
+    };
+  }, [duplicateTransactionCount, expenses, holdings, smartRuleSuggestions.length, user, vaultDocs]);
+
+  const monthlyReview = useMemo(() => {
+    const reviewMonth = selectedMonth === "all" ? currentMonth : selectedMonth;
+    const label = reviewMonth ? monthLabel(reviewMonth) : monthLabel(toYYYYMM(new Date()));
+    const items = expenses.filter((item) => item.date?.startsWith(reviewMonth));
+    const monthTotals = {
+      income: sumByType(items, "income"),
+      expense: sumByType(items, "expense"),
+      investment: sumByType(items, "investment"),
+      insurance: sumByType(items, "insurance"),
+    };
+    monthTotals.balance = monthTotals.income - monthTotals.expense - monthTotals.investment - monthTotals.insurance;
+    monthTotals.savingsRate = monthTotals.income > 0 ? ((monthTotals.income - monthTotals.expense) / monthTotals.income) * 100 : 0;
+    const categoryRows = buildPie(items, "expense").slice(0, 3);
+    const goalGap = goals.reduce((sum, goal) => sum + Math.max(Number(goal.targetAmount || 0) - Number(goal.currentAmount || 0), 0), 0);
+    return {
+      label,
+      totals: monthTotals,
+      topCategories: categoryRows,
+      subscriptionMonthly,
+      recurringAnnual,
+      goalGap,
+      portfolioGainLoss,
+      actionCount: alerts.filter((item) => item.tone !== "good").length + smartRuleSuggestions.length,
+    };
+  }, [alerts, currentMonth, expenses, goals, portfolioGainLoss, recurringAnnual, selectedMonth, smartRuleSuggestions.length, subscriptionMonthly]);
+
+  const applySmartRuleSuggestions = useCallback(async () => {
+    if (!user || !smartRuleSuggestions.length) return;
+    const suggestionMap = new Map(smartRuleSuggestions.map((item) => [item.id, item]));
+    const affected = expenses
+      .filter((item) => suggestionMap.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        previousCategory: item.category,
+        nextCategory: suggestionMap.get(item.id).to,
+      }));
+    if (!affected.length) return;
+    const batch = writeBatch(db);
+    affected.forEach((item) => {
+      batch.update(doc(db, "users", user.uid, "expenses", item.id), {
+        category: item.nextCategory,
+        ruleAppliedAt: new Date().toISOString(),
+      });
+    });
+    await batch.commit();
+    setLastUndo({ type: "smart-rules", affected, createdAt: Date.now() });
+    showToast(`${affected.length} rule suggestion(s) applied.`, "success");
+  }, [expenses, showToast, smartRuleSuggestions, user]);
+
+  const undoLastChange = useCallback(async () => {
+    if (!user || !lastUndo?.affected?.length) return;
+    const batch = writeBatch(db);
+    if (lastUndo.type === "delete-expense") {
+      lastUndo.affected.forEach((item) => {
+        const { id, ...payload } = item;
+        batch.set(doc(db, "users", user.uid, "expenses", id), payload, { merge: true });
+      });
+    } else {
+      lastUndo.affected.forEach((item) => {
+        batch.update(doc(db, "users", user.uid, "expenses", item.id), {
+          category: item.previousCategory,
+          ruleAppliedAt: null,
+        });
+      });
+    }
+    await batch.commit();
+    setLastUndo(null);
+    showToast("Last change was undone.", "success");
+  }, [lastUndo, showToast, user]);
+
+  const exportMonthlyReview = useCallback(() => {
+    const rows = [
+      ["Income", fmtINR(monthlyReview.totals.income)],
+      ["Expenses", fmtINR(monthlyReview.totals.expense)],
+      ["Investments", fmtINR(monthlyReview.totals.investment)],
+      ["Insurance", fmtINR(monthlyReview.totals.insurance)],
+      ["Savings rate", monthlyReview.totals.income > 0 ? `${monthlyReview.totals.savingsRate.toFixed(1)}%` : "—"],
+      ["Net cash", fmtINR(monthlyReview.totals.balance)],
+      ["Goal funding gap", fmtINR(monthlyReview.goalGap)],
+      ["Portfolio movement", fmtINR(monthlyReview.portfolioGainLoss)],
+    ];
+    const html = `<!doctype html><html><head><title>Finwise Monthly Review</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#111}h1{font-size:26px;margin:0 0 4px}p{color:#555}table{border-collapse:collapse;width:100%;margin-top:20px}td{border-bottom:1px solid #ddd;padding:10px 6px;font-size:13px}td:last-child{text-align:right;font-weight:700}li{margin:8px 0;font-size:13px}</style></head><body><h1>Finwise Monthly Review</h1><p>${monthlyReview.label}</p><table>${rows.map(([label, value]) => `<tr><td>${label}</td><td>${value}</td></tr>`).join("")}</table><h2>Top expense areas</h2><ul>${monthlyReview.topCategories.map((item) => `<li>${item.name}: ${fmtINR(item.value)}</li>`).join("") || "<li>No expense data yet.</li>"}</ul></body></html>`;
+    const win = window.open("", "_blank", "width=980,height=820");
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+    showToast("Monthly review opened for PDF export.");
+  }, [monthlyReview, showToast]);
 
   useEffect(() => {
     if (!notificationsEnabled) return;
@@ -1685,6 +1884,15 @@ export default function App() {
     { id: "settings", icon: "⚙", label: t("nav.settings", "Settings") },
   ];
 
+  const COMMANDS = [
+    { id: "add-expense", title: t("command.addExpense", "Add expense"), subtitle: t("command.addExpenseSub", "Open the transaction form."), action: () => setActiveTab("add") },
+    { id: "ask-ai", title: t("command.askAi", "Ask Finwise AI"), subtitle: t("command.askAiSub", "Jump to AI questions and insights."), action: () => setActiveTab("ai") },
+    { id: "monthly-review", title: t("command.monthlyReview", "Export monthly review"), subtitle: t("command.monthlyReviewSub", "Open the printable month-end pack."), action: exportMonthlyReview },
+    { id: "refresh-holdings", title: t("command.refreshHoldings", "Refresh holdings"), subtitle: t("command.refreshHoldingsSub", "Open market holdings to refresh prices."), action: () => setActiveTab("wealth") },
+    { id: "data-health", title: t("command.dataHealth", "Check data health"), subtitle: t("command.dataHealthSub", "Review sync, duplicates, stale prices, and vault uploads."), action: () => setActiveTab("dashboard") },
+    { id: "settings", title: t("command.preferences", "Preferences"), subtitle: t("command.preferencesSub", "Language, currency, notifications, and account settings."), action: () => setActiveTab("settings") },
+  ];
+
   const tabLoadingFallback = (
     <div className="section-card tab-loading-card">
       <h3>{t("common.loadingView", "Loading View")}</h3>
@@ -1741,6 +1949,14 @@ export default function App() {
             dueSoon: vaultReminderCounts.dueSoon,
             expired: vaultReminderCounts.expired,
           }}
+          dataConfidence={dataConfidence}
+          monthlyReview={monthlyReview}
+          smartRuleSuggestions={smartRuleSuggestions}
+          onApplySmartRules={applySmartRuleSuggestions}
+          lastUndo={lastUndo}
+          onUndo={undoLastChange}
+          onExportMonthlyReview={exportMonthlyReview}
+          onOpenCommand={() => setCommandOpen(true)}
           onLoadDemo={seedDemoWorkspace}
           onJumpToAdd={() => setActiveTab("add")}
           onJumpToImport={() => setActiveTab("import")}
@@ -2041,6 +2257,38 @@ export default function App() {
                     {t("auth.signout", "Sign Out")}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {commandOpen && (
+          <div className="command-overlay" onClick={() => setCommandOpen(false)}>
+            <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+              <div className="command-head">
+                <div>
+                  <h3>{t("command.title", "Command Palette")}</h3>
+                  <p>{t("command.subtitle", "Search actions, jump to workspaces, and run monthly review faster.")}</p>
+                </div>
+                <button className="icon-btn" onClick={() => setCommandOpen(false)}>{t("common.close", "Close")}</button>
+              </div>
+              <div className="command-list">
+                {COMMANDS.map((item) => (
+                  <button
+                    key={item.id}
+                    className="command-item"
+                    onClick={() => {
+                      item.action();
+                      setCommandOpen(false);
+                    }}
+                  >
+                    <strong>{item.title}</strong>
+                    <span>{item.subtitle}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="command-foot">
+                <span>{t("command.shortcut", "Shortcut")}: ⌘/Ctrl K</span>
               </div>
             </div>
           </div>

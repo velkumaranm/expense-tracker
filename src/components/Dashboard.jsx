@@ -42,6 +42,14 @@ export default function Dashboard({
   plannerSummary,
   subscriptionSummary,
   vaultSummary,
+  dataConfidence,
+  monthlyReview,
+  smartRuleSuggestions,
+  onApplySmartRules,
+  lastUndo,
+  onUndo,
+  onExportMonthlyReview,
+  onOpenCommand,
   onLoadDemo,
   onJumpToAdd,
   onJumpToImport,
@@ -85,6 +93,21 @@ export default function Dashboard({
     { done: assetCount + liabilityCount > 0, title: t("dashboard.stepWorthTitle", "Complete the balance sheet"), body: t("dashboard.stepWorthBody", "Add at least one asset or liability so runway and wealth become real."), action: onJumpToNetWorth, cta: t("dashboard.stepWorthCta", "Open net worth") },
     { done: vaultSummary.totalDocs > 0, title: t("dashboard.stepVaultTitle", "Anchor a key document"), body: t("dashboard.stepVaultBody", "One policy or loan reminder makes the vault useful immediately."), action: onJumpToVault, cta: t("dashboard.openVault", "Open vault") },
   ];
+  const confidenceTone = dataConfidence?.score >= 85 ? "verified" : dataConfidence?.score >= 70 ? "pending" : "neutral";
+  const healthRows = [
+    { label: t("dashboard.firestoreSync", "Firestore sync"), value: dataConfidence?.firestore || t("dashboard.notAvailable", "Not available") },
+    { label: t("dashboard.stalePrices", "Stale prices"), value: dataConfidence?.staleMarketPrices || 0 },
+    { label: t("dashboard.vaultIssues", "Vault upload issues"), value: (dataConfidence?.failedVaultUploads || 0) + (dataConfidence?.pendingVaultUploads || 0) },
+    { label: t("dashboard.duplicates", "Duplicate entries"), value: dataConfidence?.duplicateTransactionCount || 0 },
+    { label: t("dashboard.missingCategories", "Missing categories"), value: dataConfidence?.missingCategories || 0 },
+  ];
+  const reviewRows = [
+    { label: t("dashboard.netCash", "Net Cash Position"), value: fmtINR(monthlyReview?.totals?.balance || 0) },
+    { label: t("dashboard.savingsRateLabel", "Savings Rate"), value: monthlyReview?.totals?.income > 0 ? `${monthlyReview.totals.savingsRate.toFixed(1)}%` : "—" },
+    { label: t("dashboard.topExpense", "Top Expense"), value: monthlyReview?.topCategories?.[0]?.name || t("dashboard.noSpend", "No spend yet") },
+    { label: t("dashboard.goalGapLabel", "Goal Funding Gap"), value: fmtINR(monthlyReview?.goalGap || 0) },
+    { label: t("dashboard.portfolioMove", "Portfolio movement"), value: fmtINR(monthlyReview?.portfolioGainLoss || 0) },
+  ];
 
   return (
     <>
@@ -96,6 +119,80 @@ export default function Dashboard({
       </div>
 
       <MonthStrip months={months} selectedMonth={selectedMonth} setSelectedMonth={setSelectedMonth} />
+
+      <div className="premium-control-grid">
+        <div className="section-card premium-control-card">
+          <div className="premium-card-head">
+            <div>
+              <h3>{t("dashboard.dataConfidence", "Data Confidence Center")}</h3>
+              <p>{t("dashboard.dataConfidenceSub", "Sync, price freshness, duplicate checks, and vault upload health.")}</p>
+            </div>
+            <span className={`status-pill ${confidenceTone}`}>{Math.round(dataConfidence?.score || 0)}%</span>
+          </div>
+          <div className="trust-list">
+            {healthRows.map((row) => (
+              <div key={row.label} className="trust-row">
+                <span>{row.label}</span>
+                <strong>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+          <button className="btn-secondary control-card-action" onClick={onOpenCommand}>
+            {t("dashboard.openCommand", "Open command palette")}
+          </button>
+        </div>
+
+        <div className="section-card premium-control-card">
+          <div className="premium-card-head">
+            <div>
+              <h3>{t("dashboard.monthlyReview", "Monthly Review Flow")}</h3>
+              <p>{monthlyReview?.label || t("dashboard.monthlyCommand", "Monthly command center")}</p>
+            </div>
+            <span className="status-pill neutral">{monthlyReview?.actionCount || 0} {t("dashboard.actionsToReview", "actions")}</span>
+          </div>
+          <div className="review-chip-grid">
+            {reviewRows.map((row) => (
+              <div key={row.label} className="mini-stat">
+                <span>{row.label}</span>
+                <strong>{row.value}</strong>
+              </div>
+            ))}
+          </div>
+          <button className="btn-primary control-card-action" onClick={onExportMonthlyReview}>
+            {t("dashboard.exportReview", "Export review")}
+          </button>
+        </div>
+
+        <div className="section-card premium-control-card">
+          <div className="premium-card-head">
+            <div>
+              <h3>{t("dashboard.smartRules", "Smart Rules")}</h3>
+              <p>{t("dashboard.smartRulesSub", "Suggested categorization rules stay manual until you apply them.")}</p>
+            </div>
+            <span className="status-pill pending">{smartRuleSuggestions?.length || 0}</span>
+          </div>
+          <div className="smart-rule-list">
+            {smartRuleSuggestions?.length ? smartRuleSuggestions.slice(0, 4).map((item) => (
+              <div key={item.id} className="smart-rule-row">
+                <span>{item.from || t("dashboard.notAvailable", "Not available")} → {item.to}</span>
+                <small>{fmtINR(item.amount)} · {item.date}</small>
+              </div>
+            )) : (
+              <div className="smart-rule-empty">{t("dashboard.noRuleSuggestions", "No rule suggestions right now.")}</div>
+            )}
+          </div>
+          <div className="control-actions-row">
+            <button className="btn-primary" disabled={!smartRuleSuggestions?.length} onClick={onApplySmartRules}>
+              {t("dashboard.applySuggestions", "Apply suggestions")}
+            </button>
+            {lastUndo && (
+              <button className="btn-secondary" onClick={onUndo}>
+                {t("dashboard.undoLast", "Undo last change")}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       {setupScore < 5 && (
         <div className="section-card" style={{ marginBottom: 14 }}>
