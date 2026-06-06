@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { PIE_COLORS, INV_COLORS, INS_COLORS } from "../lib/constants";
 import { fmtINR } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, localizeKnownText, useI18n } from "../lib/i18n";
 import MonthStrip from "./MonthStrip";
 import { AreaTip, PieTip } from "./ChartBits";
 
@@ -57,12 +57,15 @@ export default function Dashboard({
   onJumpToNetWorth,
   onJumpToVault,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const balanceTone = totals.balance >= 0 ? "var(--income)" : "var(--expense)";
   const savingsColor = totals.savingsRate >= 20 ? "var(--income)" : totals.savingsRate >= 10 ? "var(--accent)" : "var(--expense)";
   const runwayMonths = totals.expense > 0 ? netWorth / totals.expense : 0;
   const investRate = totals.income > 0 ? (totals.investment / totals.income) * 100 : 0;
   const goalFundingGap = goals.reduce((sum, goal) => sum + Math.max(Number(goal.targetAmount || 0) - Number(goal.currentAmount || 0), 0), 0);
+  const localizedExpPieData = expPieData.map((item) => ({ ...item, name: getCategoryLabel(language, item.name, item.name), rawName: item.name }));
+  const localizedInvPieData = invPieData.map((item) => ({ ...item, name: getCategoryLabel(language, item.name, item.name), rawName: item.name }));
+  const localizedInsPieData = insPieData.map((item) => ({ ...item, name: getCategoryLabel(language, item.name, item.name), rawName: item.name }));
   const setupScore = [
     totalTransactions > 0,
     goals.length > 0,
@@ -104,7 +107,7 @@ export default function Dashboard({
   const reviewRows = [
     { label: t("dashboard.netCash", "Net Cash Position"), value: fmtINR(monthlyReview?.totals?.balance || 0) },
     { label: t("dashboard.savingsRateLabel", "Savings Rate"), value: monthlyReview?.totals?.income > 0 ? `${monthlyReview.totals.savingsRate.toFixed(1)}%` : "—" },
-    { label: t("dashboard.topExpense", "Top Expense"), value: monthlyReview?.topCategories?.[0]?.name || t("dashboard.noSpend", "No spend yet") },
+    { label: t("dashboard.topExpense", "Top Expense"), value: monthlyReview?.topCategories?.[0]?.name ? getCategoryLabel(language, monthlyReview.topCategories[0].name, monthlyReview.topCategories[0].name) : t("dashboard.noSpend", "No spend yet") },
     { label: t("dashboard.goalGapLabel", "Goal Funding Gap"), value: fmtINR(monthlyReview?.goalGap || 0) },
     { label: t("dashboard.portfolioMove", "Portfolio movement"), value: fmtINR(monthlyReview?.portfolioGainLoss || 0) },
   ];
@@ -377,17 +380,17 @@ export default function Dashboard({
 
         <div className="chart-card chart-span-5">
           <div className="chart-title">{t("dashboard.expenseMix", "Expense Mix")}</div>
-          {expPieData.length ? (
+          {localizedExpPieData.length ? (
             <div className="pie-row">
               <PieChart width={140} height={140}>
-                <Pie data={expPieData.slice(0, 6)} dataKey="value" cx={62} cy={62} innerRadius={32} outerRadius={56} paddingAngle={2}>
-                  {expPieData.slice(0, 6).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                <Pie data={localizedExpPieData.slice(0, 6)} dataKey="value" cx={62} cy={62} innerRadius={32} outerRadius={56} paddingAngle={2}>
+                  {localizedExpPieData.slice(0, 6).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                 </Pie>
                 <Tooltip content={<PieTip />} />
               </PieChart>
               <div className="pie-legend">
-                {expPieData.slice(0, 6).map((item, i) => (
-                  <div key={item.name} className="pie-legend-item">
+                {localizedExpPieData.slice(0, 6).map((item, i) => (
+                  <div key={item.rawName || item.name} className="pie-legend-item">
                     <span className="pie-dot" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
                     <span className="pie-legend-val">{fmtINR(item.value)}</span>
@@ -403,8 +406,8 @@ export default function Dashboard({
           <div className="insight-list">
             {alerts.length ? alerts.map((alert, idx) => (
               <div key={idx} className={`alert-item ${alert.tone || "info"}`}>
-                <strong>{alert.title}</strong>
-                <p>{alert.body}</p>
+                <strong>{localizeKnownText(language, alert.title)}</strong>
+                <p>{localizeKnownText(language, alert.body)}</p>
               </div>
             )) : (
               <div className="alert-item good">
@@ -421,7 +424,7 @@ export default function Dashboard({
             <div className="mini-card">
               <div className="k">{t("dashboard.topExpense", "Top Expense")}</div>
               <div className="v">{topCategories[0] ? fmtINR(topCategories[0].value) : "—"}</div>
-              <div className="muted">{topCategories[0]?.name || t("dashboard.noSpend", "No spend yet")}</div>
+              <div className="muted">{topCategories[0] ? getCategoryLabel(language, topCategories[0].name, topCategories[0].name) : t("dashboard.noSpend", "No spend yet")}</div>
             </div>
             <div className="mini-card">
               <div className="k">{t("dashboard.recurringOutflow", "Recurring Outflow")}</div>
@@ -436,12 +439,12 @@ export default function Dashboard({
           </div>
         </div>
 
-        {invPieData.length > 0 && (
+        {localizedInvPieData.length > 0 && (
           <div className="chart-card chart-span-6 dashboard-fixed-card dashboard-list-card">
             <div className="chart-title" style={{ color: "var(--invest)" }}>{t("dashboard.investAlloc", "Investment Allocation")}</div>
             <div className="dashboard-stat-list">
-              {invPieData.slice(0, 5).map((item, i) => (
-                <div key={item.name} className="stat-line">
+              {localizedInvPieData.slice(0, 5).map((item, i) => (
+                <div key={item.rawName || item.name} className="stat-line">
                   <span>{item.name}</span>
                   <span style={{ color: INV_COLORS[i % INV_COLORS.length] }}>{fmtINR(item.value)}</span>
                 </div>
@@ -450,12 +453,12 @@ export default function Dashboard({
           </div>
         )}
 
-        {insPieData.length > 0 && (
+        {localizedInsPieData.length > 0 && (
           <div className="chart-card chart-span-6 dashboard-fixed-card dashboard-list-card">
             <div className="chart-title" style={{ color: "var(--insure)" }}>{t("dashboard.insuranceLoad", "Insurance Load")}</div>
             <div className="dashboard-stat-list">
-              {insPieData.slice(0, 5).map((item, i) => (
-                <div key={item.name} className="stat-line">
+              {localizedInsPieData.slice(0, 5).map((item, i) => (
+                <div key={item.rawName || item.name} className="stat-line">
                   <span>{item.name}</span>
                   <span style={{ color: INS_COLORS[i % INS_COLORS.length] }}>{fmtINR(item.value)}</span>
                 </div>
@@ -481,7 +484,7 @@ export default function Dashboard({
               <div className="k">{t("dashboard.nextDueItems", "Next due items")}</div>
               <div className="v">{subscriptionSummary.upcomingBills.length}</div>
               <div className="muted">
-                {subscriptionSummary.upcomingBills.slice(0, 2).map((bill) => `${bill.category} ${bill.nextDate.toLocaleDateString("en-IN")}`).join(" • ") || t("dashboard.noRecurringDue", "No recurring due dates yet.")}
+                {subscriptionSummary.upcomingBills.slice(0, 2).map((bill) => `${getCategoryLabel(language, bill.category, bill.category)} ${bill.nextDate.toLocaleDateString("en-IN")}`).join(" • ") || t("dashboard.noRecurringDue", "No recurring due dates yet.")}
               </div>
             </div>
           </div>

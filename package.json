@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:full": "node scripts/dev-full.mjs",
-    "build": "vite build",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "build": "npm run check:i18n && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "proxy": "node server/ai-proxy.mjs",

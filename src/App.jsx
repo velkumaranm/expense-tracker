@@ -260,7 +260,7 @@ export default function App() {
   const [pwaInstalled, setPwaInstalled] = useState(() =>
     window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true
   );
-  const t = (key, fallback = "") => getTranslation(language, key, fallback);
+  const t = useCallback((key, fallback = "") => getTranslation(language, key, fallback), [language]);
   const toastTimerRef = useRef(null);
   const latestAlertsRef = useRef("");
   const profileReadyRef = useRef(false);
@@ -691,7 +691,9 @@ export default function App() {
             asOf: data?.asOf || "",
           });
         }
-      } catch {}
+      } catch {
+        // Keep the fallback FX rate when the refresh endpoint is unavailable.
+      }
     };
     loadFx();
     return () => {
@@ -1118,10 +1120,10 @@ export default function App() {
     try {
       if (editId) {
         await updateDoc(doc(db, "users", user.uid, "expenses", editId), payload);
-        showToast("Transaction updated.");
+        showToast(t("toast.transactionUpdated", "Transaction updated."));
       } else {
         await addDoc(collection(db, "users", user.uid, "expenses"), payload);
-        showToast("Transaction added.");
+        showToast(t("toast.transactionAdded", "Transaction added."));
       }
       setAmount("");
       setNote("");
@@ -1133,7 +1135,7 @@ export default function App() {
       setEditId(null);
       setActiveTab("dashboard");
     } catch {
-      showToast("Failed to save transaction.", "error");
+      showToast(t("toast.transactionSaveFailed", "Failed to save transaction."), "error");
     }
   };
 
@@ -1143,7 +1145,7 @@ export default function App() {
     if (removed) {
       setLastUndo({ type: "delete-expense", affected: [removed], createdAt: Date.now() });
     }
-    showToast("Transaction removed. Undo is available.", "error");
+    showToast(t("toast.transactionRemovedUndo", "Transaction removed. Undo is available."), "error");
   };
 
   const editExpense = (item) => {
@@ -1182,7 +1184,7 @@ export default function App() {
 
   const seedDemoWorkspace = useCallback(async () => {
     if (!user || expenses.length) {
-      showToast("Demo mode is best started from a fresh account with no transactions yet.", "warning");
+      showToast(t("toast.demoFreshAccount", "Demo mode is best started from a fresh account with no transactions yet."), "warning");
       return;
     }
     const demoMonth = new Date();
@@ -1227,11 +1229,11 @@ export default function App() {
         emiAmount: "18000",
       }));
       setOnboardingState((prev) => ({ ...prev, demoSeeded: true, wizardStep: 1 }));
-      showToast("Demo mode loaded. Explore the workflows with sample financial data.");
+      showToast(t("toast.demoLoaded", "Demo mode loaded. Explore the workflows with sample financial data."));
     } catch {
-      showToast("Could not load demo mode.", "error");
+      showToast(t("toast.demoLoadFailed", "Could not load demo mode."), "error");
     }
-  }, [user, expenses.length, showToast]);
+  }, [user, expenses.length, showToast, t]);
 
   const months = Array.from({ length: 12 }, (_, i) => {
     const d = new Date();
@@ -1414,14 +1416,27 @@ export default function App() {
   const budgetProgress = budgetNum ? Math.min((totals.expense / budgetNum) * 100, 100) : 0;
   const budgetColor = budgetProgress > 90 ? "var(--expense)" : budgetProgress > 70 ? "var(--accent)" : "var(--income)";
 
-  const alerts = [];
-  if (budgetNum && totals.expense > budgetNum) alerts.push({ title: t("dashboard.alertBudgetExceeded", "Budget exceeded"), body: `${t("dashboard.alertOverBudgetPrefix", "You are")} ${fmtINR(totals.expense - budgetNum)} ${t("dashboard.alertOverBudgetSuffix", "over the current budget.")}`, tone: "warn" });
-  else if (budgetNum && budgetProgress > 85) alerts.push({ title: t("dashboard.alertBudgetTight", "Budget getting tight"), body: `${budgetProgress.toFixed(0)}% ${t("dashboard.alertBudgetUsed", "of the monthly expense budget is already used.")}`, tone: "info" });
-  if (momExpenseDelta > 12) alerts.push({ title: t("dashboard.alertSpendingSpike", "Spending spike"), body: `${t("dashboard.alertExpenseUpPrefix", "Expenses are up")} ${momExpenseDelta.toFixed(1)}% ${t("dashboard.alertExpenseUpSuffix", "versus the previous month.")}`, tone: "warn" });
-  if (totals.income > 0 && totals.savingsRate < 10) alerts.push({ title: t("dashboard.alertLowSavings", "Savings rate is low"), body: t("dashboard.alertLowSavingsBody", "Try protecting savings before discretionary spend expands further."), tone: "warn" });
-  if (unusualTransactions.length) alerts.push({ title: t("dashboard.alertUnusualTitle", "Unusual transactions detected"), body: `${unusualTransactions.length} ${t("dashboard.alertUnusualBody", "transaction(s) look materially larger than category norms.")}`, tone: "warn" });
-  if (recurringOutflow > 0 && totals.income > 0 && recurringOutflow > totals.income * 0.35) alerts.push({ title: t("dashboard.alertRecurringHeavy", "Recurring obligations are heavy"), body: t("dashboard.alertRecurringHeavyBody", "Bills and recurring commitments are consuming a large share of monthly income."), tone: "info" });
-  if (!alerts.length) alerts.push({ title: t("dashboard.healthyRhythm", "Healthy rhythm"), body: t("dashboard.healthyRhythmBody", "No urgent warnings from budgets, anomalies, or recurring commitments."), tone: "good" });
+  const alerts = useMemo(() => {
+    const nextAlerts = [];
+    if (budgetNum && totals.expense > budgetNum) nextAlerts.push({ title: t("dashboard.alertBudgetExceeded", "Budget exceeded"), body: `${t("dashboard.alertOverBudgetPrefix", "You are")} ${fmtINR(totals.expense - budgetNum)} ${t("dashboard.alertOverBudgetSuffix", "over the current budget.")}`, tone: "warn" });
+    else if (budgetNum && budgetProgress > 85) nextAlerts.push({ title: t("dashboard.alertBudgetTight", "Budget getting tight"), body: `${budgetProgress.toFixed(0)}% ${t("dashboard.alertBudgetUsed", "of the monthly expense budget is already used.")}`, tone: "info" });
+    if (momExpenseDelta > 12) nextAlerts.push({ title: t("dashboard.alertSpendingSpike", "Spending spike"), body: `${t("dashboard.alertExpenseUpPrefix", "Expenses are up")} ${momExpenseDelta.toFixed(1)}% ${t("dashboard.alertExpenseUpSuffix", "versus the previous month.")}`, tone: "warn" });
+    if (totals.income > 0 && totals.savingsRate < 10) nextAlerts.push({ title: t("dashboard.alertLowSavings", "Savings rate is low"), body: t("dashboard.alertLowSavingsBody", "Try protecting savings before discretionary spend expands further."), tone: "warn" });
+    if (unusualTransactions.length) nextAlerts.push({ title: t("dashboard.alertUnusualTitle", "Unusual transactions detected"), body: `${unusualTransactions.length} ${t("dashboard.alertUnusualBody", "transaction(s) look materially larger than category norms.")}`, tone: "warn" });
+    if (recurringOutflow > 0 && totals.income > 0 && recurringOutflow > totals.income * 0.35) nextAlerts.push({ title: t("dashboard.alertRecurringHeavy", "Recurring obligations are heavy"), body: t("dashboard.alertRecurringHeavyBody", "Bills and recurring commitments are consuming a large share of monthly income."), tone: "info" });
+    if (!nextAlerts.length) nextAlerts.push({ title: t("dashboard.healthyRhythm", "Healthy rhythm"), body: t("dashboard.healthyRhythmBody", "No urgent warnings from budgets, anomalies, or recurring commitments."), tone: "good" });
+    return nextAlerts;
+  }, [
+    budgetNum,
+    budgetProgress,
+    momExpenseDelta,
+    recurringOutflow,
+    t,
+    totals.expense,
+    totals.income,
+    totals.savingsRate,
+    unusualTransactions.length,
+  ]);
 
   const duplicateTransactionCount = useMemo(() => {
     const seen = new Map();
@@ -1572,8 +1587,8 @@ export default function App() {
     }
     await batch.commit();
     setLastUndo(null);
-    showToast("Last change was undone.", "success");
-  }, [lastUndo, showToast, user]);
+    showToast(t("toast.lastChangeUndone", "Last change was undone."), "success");
+  }, [lastUndo, showToast, t, user]);
 
   const exportMonthlyReview = useCallback(() => {
     const rows = [
@@ -1593,8 +1608,8 @@ export default function App() {
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 400);
-    showToast("Monthly review opened for PDF export.");
-  }, [monthlyReview, showToast]);
+    showToast(t("toast.monthlyReviewPdf", "Monthly review opened for PDF export."));
+  }, [monthlyReview, showToast, t]);
 
   useEffect(() => {
     if (!notificationsEnabled) return;
@@ -1716,10 +1731,10 @@ export default function App() {
         externalText = response.text || "";
       }
       setAiState({ loading: false, error: "", externalText, report: heuristicReport, language });
-      showToast("Insights refreshed.");
+      showToast(t("toast.insightsRefreshed", "Insights refreshed."));
     } catch (e) {
       setAiState({ loading: false, error: e.message || "AI request failed", externalText: "", report: heuristicReport, language });
-      showToast("AI request failed. Using local insights.", "warning");
+      showToast(t("toast.aiRequestFailedLocal", "AI request failed. Using local insights."), "warning");
     }
   };
 
@@ -1815,7 +1830,7 @@ export default function App() {
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     a.download = `finwise-${selectedMonth}-transactions.csv`;
     a.click();
-    showToast("CSV exported.");
+    showToast(t("toast.csvExported", "CSV exported."));
   };
 
   const exportAnalyticsPdf = () => {
@@ -1832,7 +1847,7 @@ export default function App() {
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 400);
-    showToast("PDF report opened for print/export.");
+    showToast(t("toast.pdfReportOpened", "PDF report opened for print/export."));
   };
 
   if (!user) {
@@ -2118,7 +2133,7 @@ export default function App() {
           setBudgetInput={setBudgetInput}
           onSaveBudget={() => {
             setBudget(budgetInput);
-            showToast("Budget saved.");
+            showToast(t("toast.budgetSaved", "Budget saved."));
           }}
           darkMode={darkMode}
           setDarkMode={setDarkMode}

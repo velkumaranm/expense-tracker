@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   migrateLocalAttachmentToCloud,
   openVaultAttachment,
@@ -122,7 +122,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     setForm(emptyDoc);
   };
 
-  const updateAttachmentRecord = (docId, attachmentId, updater) => {
+  const updateAttachmentRecord = useCallback((docId, attachmentId, updater) => {
     setDocs((prev) =>
       prev.map((item) =>
         item.id === docId
@@ -141,19 +141,19 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         file.id === attachmentId ? { ...file, ...(typeof updater === "function" ? updater(file) : updater) } : file
       ),
     }));
-  };
+  }, [setDocs]);
 
   const queueSync = (task) => {
     syncChainRef.current = syncChainRef.current.then(task).catch(() => {});
     return syncChainRef.current;
   };
 
-  const getAuthToken = async () => {
+  const getAuthToken = useCallback(async () => {
     if (!user?.getIdToken) throw new Error(t("vault.signInToSync", "Sign in to sync this file to cloud."));
     return user.getIdToken();
-  };
+  }, [t, user]);
 
-  const syncAttachment = async (docId, attachment) => {
+  const syncAttachment = useCallback(async (docId, attachment) => {
     if (!user?.uid) {
       updateAttachmentRecord(docId, attachment.id, { syncStatus: "local", lastError: t("vault.signInToSync", "Sign in to sync this file to cloud.") });
       return;
@@ -169,7 +169,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
         lastError: error.message || t("vault.cloudSyncFailed", "Cloud sync failed."),
       });
     }
-  };
+  }, [getAuthToken, t, updateAttachmentRecord, user]);
 
   const saveDoc = () => {
     if (!form.title) return;
@@ -337,7 +337,7 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
     pending.forEach(({ docId, file }) => {
       queueSync(() => syncAttachment(docId, file));
     });
-  }, [docs, user]);
+  }, [docs, syncAttachment, user]);
 
   const exportVault = () => {
     const payload = {

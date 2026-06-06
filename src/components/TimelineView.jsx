@@ -1,5 +1,5 @@
 import { addMonths, nextRecurringDate } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, localizeKnownText, useI18n } from "../lib/i18n";
 
 function formatDate(value) {
   if (!value) return "—";
@@ -20,7 +20,7 @@ export default function TimelineView({
   holdings,
   plannerSummary,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const now = new Date();
   const end = addMonths(now, 5);
   const months = [];
@@ -38,7 +38,7 @@ export default function TimelineView({
     events.push({
       id: `bill-${bill.id}`,
       date: next,
-      title: bill.category,
+      title: getCategoryLabel(language, bill.category, bill.category),
       kind: t("timeline.recurringBill", "Recurring bill"),
       detail: `${bill.recurringFrequency || "monthly"} • ${bill.note || t("timeline.cashCommitment", "Cash commitment")}`,
     });
@@ -53,7 +53,7 @@ export default function TimelineView({
       date: target,
       title: goal.name,
       kind: t("timeline.goalMilestone", "Goal milestone"),
-      detail: `${goal.category} ${t("timeline.targetDate", "target date")}`,
+      detail: `${localizeKnownText(language, goal.category)} ${t("timeline.targetDate", "target date")}`,
     });
   });
 

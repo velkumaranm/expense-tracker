@@ -1,6 +1,6 @@
 import { TYPE_META, VALID_TYPES, CATEGORY_ICONS } from "../lib/constants";
 import { categoriesForType, defaultCategoryForType } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, getTypeLabel, useI18n } from "../lib/i18n";
 
 export default function AddForm({
   amount,
@@ -21,7 +21,7 @@ export default function AddForm({
   recurringFrequency,
   setRecurringFrequency,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const changeType = (nextType) => {
     setType(nextType);
     setCategory(defaultCategoryForType(nextType));
@@ -42,7 +42,7 @@ export default function AddForm({
             <div className="type-toggle">
               {VALID_TYPES.map((item) => (
                 <button key={item} className={`type-btn ${type === item ? `active ${item}` : ""}`} onClick={() => changeType(item)}>
-                  {TYPE_META[item].icon} {TYPE_META[item].label}
+                  {TYPE_META[item].icon} {getTypeLabel(language, item, TYPE_META[item].label)}
                 </button>
               ))}
             </div>
@@ -54,7 +54,7 @@ export default function AddForm({
           <div className="fg">
             <label className="fl">{t("add.category", "Category")}</label>
             <select className="fs" value={category} onChange={(e) => setCategory(e.target.value)}>
-              {categoriesForType(type).map((c) => <option key={c} value={c}>{CATEGORY_ICONS[c] || "•"} {c}</option>)}
+              {categoriesForType(type).map((c) => <option key={c} value={c}>{CATEGORY_ICONS[c] || "•"} {getCategoryLabel(language, c)}</option>)}
             </select>
           </div>
           <div className="fg">

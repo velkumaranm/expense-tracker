@@ -42,13 +42,6 @@ const KIND_OPTIONS = [
   { id: "commodity", label: "Commodity" },
 ];
 
-function kindLabel(kind) {
-  if (kind === "mutualFund") return "Mutual Fund";
-  if (kind === "crypto") return "Crypto";
-  if (kind === "commodity") return "Commodity";
-  return "Stock";
-}
-
 function translatedKindLabel(kind, t) {
   if (kind === "mutualFund") return t("market.kindFund", "Mutual Fund");
   if (kind === "crypto") return t("market.kindCrypto", "Crypto");
@@ -163,29 +156,6 @@ function toLocalStamp(iso, t) {
   }
 }
 
-function getDisplayPrice(item) {
-  const live = Number(item.currentPrice || 0);
-  if (live > 0) return fmtINR(live);
-  const cost = Number(item.costPerUnit || 0);
-  if (cost > 0) return `${fmtINR(cost)} avg`;
-  return "Pending refresh";
-}
-
-function getDisplayValue(item) {
-  const value = Number(item.currentValue || 0);
-  if (value > 0) return fmtINR(value);
-  const invested = Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0));
-  return invested > 0 ? fmtINR(invested) : fmtINR(0);
-}
-
-function getAverageCost(item) {
-  const cost = Number(item.costPerUnit || 0);
-  if (cost > 0) return fmtINR(cost);
-  const units = Number(item.units || 0);
-  const invested = Number(item.investedValue || 0);
-  return units > 0 && invested > 0 ? fmtINR(invested / units) : fmtINR(0);
-}
-
 function isIndianHolding(item) {
   const symbol = String(item?.quoteSymbol || item?.symbol || "").toUpperCase();
   const account = String(item?.account || "").toLowerCase();
@@ -281,7 +251,6 @@ export default function PortfolioHoldings({
   setHoldings,
   snapshots,
   setSnapshots,
-  marketProviders,
   marketDisplayCurrency,
   setMarketDisplayCurrency,
   marketFx,

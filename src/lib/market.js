@@ -99,7 +99,9 @@ async function fetchYahooQuotes(symbols) {
       const data = await res.json();
       const results = data?.quoteResponse?.result;
       if (Array.isArray(results) && results.length) return results;
-    } catch {}
+    } catch {
+      // Try the next Yahoo quote endpoint.
+    }
   }
   return [];
 }

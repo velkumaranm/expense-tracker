@@ -26,7 +26,6 @@ export default function LoginPage({
   onSignup,
   onGoogle,
   onSendEmailLink,
-  passkeyProfiles = [],
   passkeySupported = false,
 }) {
   const { t } = useI18n();

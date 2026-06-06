@@ -1,5 +1,5 @@
 import { fmtINR } from "./utils";
-import { getTranslation } from "./i18n";
+import { getCategoryLabel, getTranslation } from "./i18n";
 
 export const buildHeuristicReport = ({
   language = "en",
@@ -15,13 +15,14 @@ export const buildHeuristicReport = ({
   netWorth,
 }) => {
   const tr = (key, fallback = "") => getTranslation(language, key, fallback);
+  const cat = (name) => getCategoryLabel(language, name, name);
   const opportunities = [];
   const tips = [];
   const top1 = topCategories[0];
   const top2 = topCategories[1];
 
-  if (top1) opportunities.push(`${top1.name} ${tr("ai.localLargestBucket", "is your largest spend bucket at")} ${fmtINR(top1.value)} ${tr("ai.localThisPeriod", "this period.")}`);
-  if (top2) opportunities.push(`${top2.name} ${tr("ai.localSecondBucket", "is the second largest spend driver. A 10% trim would free up about")} ${fmtINR(top2.value * 0.1)}.`);
+  if (top1) opportunities.push(`${cat(top1.name)} ${tr("ai.localLargestBucket", "is your largest spend bucket at")} ${fmtINR(top1.value)} ${tr("ai.localThisPeriod", "this period.")}`);
+  if (top2) opportunities.push(`${cat(top2.name)} ${tr("ai.localSecondBucket", "is the second largest spend driver. A 10% trim would free up about")} ${fmtINR(top2.value * 0.1)}.`);
   if (momExpenseDelta > 12) opportunities.push(`${tr("ai.localMomExpenses", "Month-over-month expenses are up")} ${momExpenseDelta.toFixed(1)}%. ${tr("ai.localReviewInflation", "Review recent lifestyle inflation before it hardens.")}`);
   if (recurringOutflow > 0) opportunities.push(`${tr("ai.localRecurringBills", "Recurring bills currently consume")} ${fmtINR(recurringOutflow)} ${tr("ai.localMonthlyAudit", "monthly. Audit auto-debits and overlapping subscriptions.")}`);
   if (!opportunities.length) opportunities.push(tr("ai.localBalancedSpend", "Your spending mix is fairly balanced. Keep reinforcing the current category discipline."));
@@ -50,7 +51,7 @@ export const buildHeuristicReport = ({
       `${tr("ai.trackedNetWorth", "Tracked net worth")}: ${fmtINR(netWorth)}`,
     ],
     opportunities,
-    anomalies: unusualTransactions.map((t) => `${t.category} ${tr("ai.localOn", "on")} ${t.date} ${tr("ai.localFor", "for")} ${fmtINR(t.amount)} ${tr("ai.localAboveNormal", "looks materially above its normal range.")}`),
+    anomalies: unusualTransactions.map((t) => `${cat(t.category)} ${tr("ai.localOn", "on")} ${t.date} ${tr("ai.localFor", "for")} ${fmtINR(t.amount)} ${tr("ai.localAboveNormal", "looks materially above its normal range.")}`),
     investmentIdeas: [
       income <= 0
         ? tr("ai.localInvestStabilize", "Stabilize income tracking first, then set an investable surplus target.")
@@ -97,6 +98,7 @@ export async function requestAIQuery(payload) {
 export function answerLocalFinanceQuestion(question, context, report) {
   const language = context.language || "en";
   const tr = (key, fallback = "") => getTranslation(language, key, fallback);
+  const cat = (name) => getCategoryLabel(language, name, name);
   const q = question.toLowerCase();
   const top = context.topCategories?.[0];
   const savingsRate = context.totals?.savingsRate || 0;
@@ -109,7 +111,7 @@ export function answerLocalFinanceQuestion(question, context, report) {
   if (q.includes("save") || q.includes("cut") || q.includes("reduce")) {
     return [
       top
-        ? `${top.name} ${tr("ai.answerInspectTop", "is the first place to inspect because it is your largest expense bucket at")} ${fmtINR(top.value)}.`
+        ? `${cat(top.name)} ${tr("ai.answerInspectTop", "is the first place to inspect because it is your largest expense bucket at")} ${fmtINR(top.value)}.`
         : tr("ai.answerTopGeneric", "Your biggest savings opportunity will usually come from the top expense category."),
       report.opportunities[1] || tr("ai.answerTrimRecurring", "Trim recurring discretionary spend before touching long-term investments."),
       savingsRate < 15
@@ -147,7 +149,7 @@ export function answerLocalFinanceQuestion(question, context, report) {
   if (q.includes("spend") || q.includes("expense")) {
     return [
       `${tr("ai.answerCurrentExpense", "Current selected-period expense is")} ${fmtINR(monthlyExpense)}.`,
-      top ? `${top.name} ${tr("ai.answerLargestSpendArea", "is your largest spend area.")}` : tr("ai.answerNoDominantSpend", "You do not have a dominant spend bucket yet."),
+      top ? `${cat(top.name)} ${tr("ai.answerLargestSpendArea", "is your largest spend area.")}` : tr("ai.answerNoDominantSpend", "You do not have a dominant spend bucket yet."),
       context.unusualTransactions?.length
         ? `${tr("ai.answerUnusualTx", "Unusual transactions worth reviewing")}: ${context.unusualTransactions.length}.`
         : tr("ai.answerNoUnusual", "No unusual transactions are standing out right now."),

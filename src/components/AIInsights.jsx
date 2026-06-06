@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { fmtINR } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, localizeKnownText, useI18n } from "../lib/i18n";
 
 function parseModelSections(text) {
   const raw = String(text || "").trim();
@@ -22,9 +22,9 @@ function parseModelSections(text) {
 
   for (const line of lines) {
     if (/^[|].*[|]$/.test(line) || /^[-|:\s]+$/.test(line)) continue;
-    if (/^(overview|risks?|opportunities|recommendations|cash flow|balance sheet|commitments|watch|next steps?)[:\-]?$/i.test(line)) {
+    if (/^(overview|risks?|opportunities|recommendations|cash flow|balance sheet|commitments|watch|next steps?)[:-]?$/i.test(line)) {
       pushCurrent();
-      current = { title: line.replace(/[:\-]+$/, "").trim(), items: [] };
+      current = { title: line.replace(/[:-]+$/, "").trim(), items: [] };
       continue;
     }
     const cleaned = line.replace(/^[-*•]\s*/, "").replace(/\|/g, " ").replace(/\s+/g, " ").trim();
@@ -70,7 +70,7 @@ export default function AIInsights({
         : "OpenRouter Proxy"
     : "On-device";
   const suggestedPrompts = [
-    topCategories[0] ? `${t("ai.promptReducePrefix", "How do I reduce spending in")} ${topCategories[0].name} ${t("ai.promptReduceSuffix", "without being too aggressive?")}` : "",
+    topCategories[0] ? `${t("ai.promptReducePrefix", "How do I reduce spending in")} ${getCategoryLabel(language, topCategories[0].name, topCategories[0].name)} ${t("ai.promptReduceSuffix", "without being too aggressive?")}` : "",
     unusualTransactions.length ? t("ai.promptReviewAnomalies", "Review the unusual transactions and tell me which one matters most.") : "",
     totals.income > 0 ? t("ai.promptAllocation", "Based on my current income, how much should go to spending, investing, and emergency reserves?") : "",
     t("ai.promptNextActions", "What are the next three actions that would improve my finances this month?"),
@@ -96,7 +96,7 @@ export default function AIInsights({
         <div className="summary-card summary-span-6">
           <div className="sc-label">{t("ai.topSpendBucket", "Top Spend Bucket")}</div>
           <div className="sc-value" style={{ color: "var(--expense)" }}>{topCategories[0] ? fmtINR(topCategories[0].value) : "—"}</div>
-          <div className="sc-sub">{topCategories[0]?.name || t("ai.topSpendEmpty", "No expense data yet")}</div>
+          <div className="sc-sub">{topCategories[0] ? getCategoryLabel(language, topCategories[0].name, topCategories[0].name) : t("ai.topSpendEmpty", "No expense data yet")}</div>
         </div>
         <div className="summary-card summary-span-6">
           <div className="sc-label">{t("dashboard.savingsRateLabel", "Savings Rate")}</div>
@@ -117,10 +117,10 @@ export default function AIInsights({
               <div className="takeaway-stack">
                 {modelSections.map((section) => (
                   <div key={section.title} className="takeaway-row">
-                    <strong>{section.title}</strong>
+                    <strong>{localizeKnownText(language, section.title)}</strong>
                     <ul className="takeaway-inline-list">
                       {section.items.map((item) => (
-                        <li key={item}>{item}</li>
+                        <li key={item}>{localizeKnownText(language, item)}</li>
                       ))}
                     </ul>
                   </div>
@@ -203,15 +203,15 @@ export default function AIInsights({
               <div className="section-card ai-context-card">
                 <h3>{t("ai.quickContext", "Quick Context")}</h3>
                 <div className="stack">
-                  {report.summary.map((line) => <div key={line} className="stat-line"><span>{line}</span></div>)}
+                  {report.summary.map((line) => <div key={line} className="stat-line"><span>{localizeKnownText(language, line)}</span></div>)}
                 </div>
               </div>
 
               <div className="section-card ai-overview-card">
                 <h3>{t("ai.overview", "Overview")}</h3>
-                <p style={{ marginBottom: 12 }}>{report.headline}</p>
+                <p style={{ marginBottom: 12 }}>{localizeKnownText(language, report.headline)}</p>
                 <div className="stack">
-                  {report.summary.map((line) => <div key={line} className="stat-line"><span>{line}</span></div>)}
+                  {report.summary.map((line) => <div key={line} className="stat-line"><span>{localizeKnownText(language, line)}</span></div>)}
                 </div>
               </div>
 
@@ -225,7 +225,7 @@ export default function AIInsights({
                 {report.tips.map((item) => (
                   <div key={item} className="insight-item">
                     <strong>{t("ai.action", "Action")}</strong>
-                    <p>{item}</p>
+                    <p>{localizeKnownText(language, item)}</p>
                   </div>
                 ))}
               </div>
@@ -237,7 +237,7 @@ export default function AIInsights({
                 {report.opportunities.map((item) => (
                   <div key={item} className="insight-item">
                     <strong>{t("ai.opportunity", "Opportunity")}</strong>
-                    <p>{item}</p>
+                    <p>{localizeKnownText(language, item)}</p>
                   </div>
                 ))}
               </div>
@@ -249,7 +249,7 @@ export default function AIInsights({
                 {report.investmentIdeas.map((item) => (
                   <div key={item} className="insight-item">
                     <strong>{t("ai.portfolioNudge", "Portfolio Nudge")}</strong>
-                    <p>{item}</p>
+                    <p>{localizeKnownText(language, item)}</p>
                   </div>
                 ))}
               </div>
@@ -262,7 +262,7 @@ export default function AIInsights({
                   {report.anomalies.map((item) => (
                     <div key={item} className="alert-item warn">
                       <strong>{t("ai.unusualSpendLabel", "Unusual Spend")}</strong>
-                      <p>{item}</p>
+                      <p>{localizeKnownText(language, item)}</p>
                     </div>
                   ))}
                 </div>
@@ -278,7 +278,7 @@ export default function AIInsights({
                   {unusualTransactions.map((tx) => (
                     <div key={tx.id} className="table-row">
                       <div className="split-row">
-                        <strong>{tx.category}</strong>
+                        <strong>{getCategoryLabel(language, tx.category, tx.category)}</strong>
                         <span style={{ color: "var(--expense)" }}>{fmtINR(tx.amount)}</span>
                       </div>
                       <p>{tx.date} • {tx.note || t("history.noNote", "No note")}</p>

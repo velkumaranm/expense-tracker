@@ -2,10 +2,10 @@ import { useRef, useState } from "react";
 import { ALL_CATS, EXPENSE_CATEGORIES, VALID_TYPES } from "../lib/constants";
 import { autoMapColumns, normalizeDate, parseCSV, toLocalDateStr, fmtINR } from "../lib/utils";
 import { TYPE_META } from "../lib/constants";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, getTypeLabel, useI18n } from "../lib/i18n";
 
 export default function ImportPage({ onImport, showToast }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [step, setStep] = useState("upload");
   const [csvData, setCsvData] = useState(null);
   const [colMap, setColMap] = useState({ date: -1, type: -1, category: -1, amount: -1, note: -1 });
@@ -170,9 +170,9 @@ export default function ImportPage({ onImport, showToast }) {
               <div key={i} className="table-row" style={{ opacity: r.valid ? 1 : 0.45 }}>
                 <div className="split-row">
                   <strong>{r.valid ? t("common.valid", "Valid") : t("common.skip", "Skip")}</strong>
-                  <span style={{ color: TYPE_META[r.type]?.color }}>{TYPE_META[r.type]?.label}</span>
+                  <span style={{ color: TYPE_META[r.type]?.color }}>{getTypeLabel(language, r.type, TYPE_META[r.type]?.label || r.type)}</span>
                 </div>
-                <p>{r.date} • {r.category} • {fmtINR(r.amount)} • {r.note || t("history.noNote", "No note")}</p>
+                <p>{r.date} • {getCategoryLabel(language, r.category, r.category)} • {fmtINR(r.amount)} • {r.note || t("history.noNote", "No note")}</p>
               </div>
             ))}
           </div>

@@ -10,7 +10,7 @@ import {
   Legend,
 } from "recharts";
 import { monthLabel, fmtINR } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, useI18n } from "../lib/i18n";
 import { PIE_COLORS } from "../lib/constants";
 import { AreaTip } from "./ChartBits";
 
@@ -22,7 +22,7 @@ export default function AnalyticsReports({
   onExportPdf,
   onExportCsv,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const fmtAxis = (value) => {
     const amount = Number(value || 0);
     if (!amount) return "0";
@@ -49,7 +49,8 @@ export default function AnalyticsReports({
     .find((row) => categoryKeys.some(({ key }) => Number(row[key] || 0) > 0));
   const categorySnapshot = categoryKeys
     .map(({ key, total }) => ({
-      name: key,
+      name: getCategoryLabel(language, key, key),
+      rawName: key,
       value: Number(latestCategoryMonth?.[key] || 0),
       total,
     }))
@@ -73,22 +74,22 @@ export default function AnalyticsReports({
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.incomeYoY", "Income YoY")}</div>
           <div className="sc-value" style={{ color: "var(--income)" }}>{yoyComparison.incomeDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.income)} vs {fmtINR(yoyComparison.previous.income)}</div>
+          <div className="sc-sub">{fmtINR(yoyComparison.current.income)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.income)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.expenseYoY", "Expense YoY")}</div>
           <div className="sc-value" style={{ color: yoyComparison.expenseUp ? "var(--expense)" : "var(--income)" }}>{yoyComparison.expenseDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.expense)} vs {fmtINR(yoyComparison.previous.expense)}</div>
+          <div className="sc-sub">{fmtINR(yoyComparison.current.expense)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.expense)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.investmentYoY", "Investment YoY")}</div>
           <div className="sc-value" style={{ color: "var(--invest)" }}>{yoyComparison.investDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.investment)} vs {fmtINR(yoyComparison.previous.investment)}</div>
+          <div className="sc-sub">{fmtINR(yoyComparison.current.investment)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.investment)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.savingsYoY", "Savings YoY")}</div>
           <div className="sc-value" style={{ color: "var(--accent)" }}>{yoyComparison.savingsDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.savings)} vs {fmtINR(yoyComparison.previous.savings)}</div>
+          <div className="sc-sub">{fmtINR(yoyComparison.current.savings)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.savings)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.bestSavings", "Best Savings Month")}</div>
@@ -139,7 +140,7 @@ export default function AnalyticsReports({
               <Tooltip content={<AreaTip />} />
               <Bar dataKey="value" name={latestCategoryMonth?.label || t("analytics.latestActiveMonth", "Latest active month")} radius={[0, 6, 6, 0]}>
                 {categorySnapshot.map((item, i) => (
-                  <Cell key={item.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                  <Cell key={item.rawName || item.name} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                 ))}
               </Bar>
             </BarChart>
@@ -157,7 +158,7 @@ export default function AnalyticsReports({
             )}
             {heatmap.rows.map((row) => (
               <div key={row.category} className="heat-row">
-                <div style={{ fontSize: 11, color: "var(--text2)", fontWeight: 600 }}>{row.category}</div>
+                <div style={{ fontSize: 11, color: "var(--text2)", fontWeight: 600 }}>{getCategoryLabel(language, row.category, row.category)}</div>
                 {row.values.map((value, i) => (
                   <div
                     key={`${row.category}-${heatmap.months[i]}`}

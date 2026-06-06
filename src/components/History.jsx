@@ -9,7 +9,7 @@ import {
   VALID_TYPES,
 } from "../lib/constants";
 import { fmtINR } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { getCategoryLabel, getTypeLabel, useI18n } from "../lib/i18n";
 
 export default function History({
   filtered,
@@ -28,7 +28,7 @@ export default function History({
   selectedMonth,
   setSelectedMonth,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const allCats = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...INVESTMENT_CATEGORIES, ...INSURANCE_CATEGORIES];
 
   return (
@@ -47,7 +47,7 @@ export default function History({
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {["all", ...VALID_TYPES].map((item) => (
             <button key={item} className={`filter-chip ${filterType === item ? "active" : ""}`} onClick={() => setFilterType(item)}>
-              {item === "all" ? t("common.all", "All") : `${TYPE_META[item].icon} ${TYPE_META[item].label}`}
+              {item === "all" ? t("common.all", "All") : `${TYPE_META[item].icon} ${getTypeLabel(language, item, TYPE_META[item].label)}`}
             </button>
           ))}
           <button className={`filter-chip ${recurringOnly ? "active" : ""}`} onClick={() => setRecurringOnly((v) => !v)}>
@@ -64,7 +64,7 @@ export default function History({
         <button className={`filter-chip ${!filterCategory ? "active" : ""}`} onClick={() => setFilterCategory("")}>{t("history.allCategories", "All Categories")}</button>
         {allCats.map((c) => (
           <button key={c} className={`filter-chip ${filterCategory === c ? "active" : ""}`} onClick={() => setFilterCategory(filterCategory === c ? "" : c)}>
-            {CATEGORY_ICONS[c]} {c}
+            {CATEGORY_ICONS[c]} {getCategoryLabel(language, c)}
           </button>
         ))}
       </div>
@@ -80,9 +80,9 @@ export default function History({
             <div className={`tx-icon ${item.type}`}>{CATEGORY_ICONS[item.category] || "💸"}</div>
             <div className="tx-info">
               <div className="tx-cat">
-                {item.category}
-                <span className={`tx-badge ${item.type}`}>{TYPE_META[item.type]?.label || item.type}</span>
-                {item.recurring && <span className="tx-badge recurring">{item.recurringFrequency || "monthly"}</span>}
+                {getCategoryLabel(language, item.category, item.category)}
+                <span className={`tx-badge ${item.type}`}>{getTypeLabel(language, item.type, TYPE_META[item.type]?.label || item.type)}</span>
+                {item.recurring && <span className="tx-badge recurring">{t(`add.${item.recurringFrequency || "monthly"}`, item.recurringFrequency || "monthly")}</span>}
               </div>
               <div className="tx-note">{item.note || t("history.noNote", "No note")}</div>
             </div>

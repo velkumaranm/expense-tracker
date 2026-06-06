@@ -75,7 +75,7 @@ async function parseApiResponse(res, fallbackMessage) {
   return data;
 }
 
-export async function saveVaultAttachmentToCloud(userId, docId, file) {
+export async function saveVaultAttachmentToCloud() {
   throw new Error("Save to cloud requires the sync flow.");
 }
 

@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { averageHoldingYears, cagr, convertAmount, fmtINR, fmtPct, goalId, xirr } from "../lib/utils";
-import { useI18n } from "../lib/i18n";
+import { localizeKnownText, useI18n } from "../lib/i18n";
 import PortfolioHoldings from "./PortfolioHoldings";
 
 const WEALTH_COLORS = ["#34D399", "#818CF8", "#C8A96E", "#F87171"];
@@ -37,12 +37,15 @@ export default function NetWorthTracker({
   trackedInvestments,
   netWorth,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [assetForm, setAssetForm] = useState({ name: "", type: "Cash", value: "" });
   const [liabilityForm, setLiabilityForm] = useState({ name: "", type: "Loan", value: "" });
-  const holdingCurrency = (item) =>
-    String(item?.currency || (String(item?.quoteSymbol || item?.symbol || "").toUpperCase().includes(".NS") ? "INR" : "USD")).toUpperCase();
-  const toInr = (amount, item) => convertAmount(amount, holdingCurrency(item), "INR", marketFx);
+  const holdingCurrency = useCallback(
+    (item) =>
+      String(item?.currency || (String(item?.quoteSymbol || item?.symbol || "").toUpperCase().includes(".NS") ? "INR" : "USD")).toUpperCase(),
+    []
+  );
+  const toInr = useCallback((amount, item) => convertAmount(amount, holdingCurrency(item), "INR", marketFx), [holdingCurrency, marketFx]);
 
   const addAsset = () => {
     if (!assetForm.name || !assetForm.value) return;
@@ -85,7 +88,7 @@ export default function NetWorthTracker({
       grouped[label] = (grouped[label] || 0) + toInr(Number(item.currentValue || item.investedValue || 0), item);
     });
     return Object.entries(grouped).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [holdings, marketFx]);
+  }, [holdings, toInr]);
   const allocationByRegion = useMemo(() => {
     const grouped = {};
     holdings.forEach((item) => {
@@ -94,7 +97,7 @@ export default function NetWorthTracker({
       grouped[label] = (grouped[label] || 0) + toInr(Number(item.currentValue || item.investedValue || 0), item);
     });
     return Object.entries(grouped).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [holdings, marketFx]);
+  }, [holdings, toInr]);
   const xirrEstimate = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const flows = holdings
@@ -107,13 +110,13 @@ export default function NetWorthTracker({
     const currentValue = holdings.reduce((sum, item) => sum + toInr(Number(item.currentValue || item.investedValue || 0), item), 0);
     if (currentValue > 0) flows.push({ amount: currentValue, date: today });
     return xirr(flows);
-  }, [holdings, marketFx]);
+  }, [holdings, toInr]);
   const cagrEstimate = useMemo(() => {
     const years = averageHoldingYears(holdings);
     const currentValue = holdings.reduce((sum, item) => sum + toInr(Number(item.currentValue || item.investedValue || 0), item), 0);
     const investedValue = holdings.reduce((sum, item) => sum + toInr(Number(item.investedValue || Number(item.units || 0) * Number(item.costPerUnit || 0)), item), 0);
     return cagr(investedValue, currentValue, years);
-  }, [holdings, marketFx]);
+  }, [holdings, toInr]);
   const sectorSplit = useMemo(() => {
     const grouped = {};
     holdings.forEach((item) => {
@@ -121,16 +124,16 @@ export default function NetWorthTracker({
       grouped[label] = (grouped[label] || 0) + toInr(Number(item.currentValue || item.investedValue || 0), item);
     });
     return Object.entries(grouped).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 5);
-  }, [holdings, marketFx]);
-  const monthlySip = useMemo(() => holdings.reduce((sum, item) => sum + toInr(Number(item.monthlyContribution || 0), item), 0), [holdings, marketFx]);
-  const realizedGains = useMemo(() => holdings.reduce((sum, item) => sum + toInr(Number(item.realizedGain || 0), item), 0), [holdings, marketFx]);
+  }, [holdings, toInr]);
+  const monthlySip = useMemo(() => holdings.reduce((sum, item) => sum + toInr(Number(item.monthlyContribution || 0), item), 0), [holdings, toInr]);
+  const realizedGains = useMemo(() => holdings.reduce((sum, item) => sum + toInr(Number(item.realizedGain || 0), item), 0), [holdings, toInr]);
   const rebalanceHints = useMemo(() => {
     const total = allocationByKind.reduce((sum, item) => sum + item.value, 0);
     const hints = [];
     if (total > 0) {
       const dominant = allocationByKind[0];
       if (dominant && dominant.value / total > 0.7) {
-        hints.push(`${dominant.name} is more than 70% of the tracked portfolio. Diversification could improve resilience.`);
+        hints.push(`${localizeKnownText(language, dominant.name)} ${t("wealth.concentrationHint", "is more than 70% of the tracked portfolio. Diversification could improve resilience.")}`);
       }
     }
     const targetDriven = holdings
@@ -143,10 +146,10 @@ export default function NetWorthTracker({
       .filter((item) => Math.abs(item.gap) >= 5)
       .slice(0, 3);
     targetDriven.forEach((item) => {
-      hints.push(`${item.name} is ${item.gap > 0 ? "above" : "below"} target weight by ${Math.abs(item.gap).toFixed(1)}%.`);
+      hints.push(`${localizeKnownText(language, item.name)} ${item.gap > 0 ? t("wealth.aboveTarget", "is above") : t("wealth.belowTarget", "is below")} ${t("wealth.targetWeightBy", "target weight by")} ${Math.abs(item.gap).toFixed(1)}%.`);
     });
     return hints;
-  }, [allocationByKind, holdings, marketFx]);
+  }, [allocationByKind, holdings, language, t, toInr]);
   const recurringInvestmentRatio = investmentTransactions.length
     ? holdings.length / Math.max(investmentTransactions.length, 1)
     : 0;
@@ -203,7 +206,7 @@ export default function NetWorthTracker({
                   {wealthMix.map((item, i) => (
                     <div key={item.name} className="pie-legend-item">
                       <span className="pie-dot" style={{ background: WEALTH_COLORS[i % WEALTH_COLORS.length] }} />
-                      <span>{item.name}</span>
+                      <span>{localizeKnownText(language, item.name)}</span>
                       <span className="pie-legend-val">{fmtINR(item.value)}</span>
                     </div>
                   ))}
@@ -230,7 +233,7 @@ export default function NetWorthTracker({
                   {allocationByKind.map((item, i) => (
                     <div key={item.name} className="pie-legend-item">
                       <span className="pie-dot" style={{ background: WEALTH_COLORS[i % WEALTH_COLORS.length] }} />
-                      <span>{item.name}</span>
+                      <span>{localizeKnownText(language, item.name)}</span>
                       <span className="pie-legend-val">{fmtINR(item.value)}</span>
                     </div>
                   ))}
@@ -351,7 +354,7 @@ export default function NetWorthTracker({
             <div className="mini-grid">
               {allocationByRegion.length ? allocationByRegion.map((item) => (
                 <div key={item.name} className="mini-card">
-                  <div className="k">{item.name}</div>
+                  <div className="k">{localizeKnownText(language, item.name)}</div>
                   <div className="v">{fmtINR(item.value)}</div>
                   <div className="muted">
                     {trackedInvestments > 0 ? `${((item.value / Math.max(trackedInvestments, 1)) * 100).toFixed(1)}% ${t("wealth.ofTrackedInvestments", "of tracked investments.")}` : t("wealth.noTrackedInvestmentBase", "No tracked investment base yet.")}
@@ -377,7 +380,7 @@ export default function NetWorthTracker({
             <div className="mini-grid">
               {sectorSplit.length ? sectorSplit.map((item) => (
                 <div key={item.name} className="mini-card">
-                  <div className="k">{item.name}</div>
+                  <div className="k">{localizeKnownText(language, item.name)}</div>
                   <div className="v">{fmtINR(item.value)}</div>
                   <div className="muted">{t("wealth.sectorSplitSub", "Tracked sector concentration snapshot.")}</div>
                 </div>
@@ -423,7 +426,7 @@ export default function NetWorthTracker({
               <div className="filter-strip" style={{ marginBottom: 0 }}>
                 {ASSET_TEMPLATES.map((template) => (
                   <button key={template.name} className="filter-chip" onClick={() => setAssetForm(template)}>
-                    {template.name}
+                    {localizeKnownText(language, template.name)}
                   </button>
                 ))}
               </div>
@@ -461,7 +464,7 @@ export default function NetWorthTracker({
                     <span style={{ color: "var(--income)" }}>{fmtINR(item.value)}</span>
                   </div>
                   <div className="split-row">
-                    <p>{item.type}</p>
+                    <p>{t(`wealth.assetType.${item.type}`, item.type)}</p>
                     <button className="tx-btn del" onClick={() => removeAsset(item.id)}>{t("common.delete", "Delete")}</button>
                   </div>
                 </div>
@@ -477,7 +480,7 @@ export default function NetWorthTracker({
               <div className="filter-strip" style={{ marginBottom: 0 }}>
                 {LIABILITY_TEMPLATES.map((template) => (
                   <button key={template.name} className="filter-chip" onClick={() => setLiabilityForm(template)}>
-                    {template.name}
+                    {localizeKnownText(language, template.name)}
                   </button>
                 ))}
               </div>
@@ -515,7 +518,7 @@ export default function NetWorthTracker({
                     <span style={{ color: "var(--expense)" }}>{fmtINR(item.value)}</span>
                   </div>
                   <div className="split-row">
-                    <p>{item.type}</p>
+                    <p>{t(`wealth.liabilityType.${item.type}`, item.type)}</p>
                     <button className="tx-btn del" onClick={() => removeLiability(item.id)}>{t("common.delete", "Delete")}</button>
                   </div>
                 </div>
