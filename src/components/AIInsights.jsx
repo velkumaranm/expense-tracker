@@ -2,46 +2,6 @@ import { useState } from "react";
 import { fmtINR } from "../lib/utils";
 import { getCategoryLabel, localizeKnownText, useI18n } from "../lib/i18n";
 
-function parseModelSections(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return [];
-  const lines = raw
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.replace(/\*\*/g, "").replace(/#+\s*/g, "").trim())
-    .filter(Boolean)
-    .filter((line) => !/^personal finance analysis/i.test(line))
-    .filter((line) => !/^here'?s an analysis/i.test(line));
-
-  const sections = [];
-  let current = { title: "Summary", items: [] };
-
-  const pushCurrent = () => {
-    if (current.items.length) sections.push(current);
-  };
-
-  for (const line of lines) {
-    if (/^[|].*[|]$/.test(line) || /^[-|:\s]+$/.test(line)) continue;
-    if (/^(overview|risks?|opportunities|recommendations|cash flow|balance sheet|commitments|watch|next steps?)[:-]?$/i.test(line)) {
-      pushCurrent();
-      current = { title: line.replace(/[:-]+$/, "").trim(), items: [] };
-      continue;
-    }
-    const cleaned = line.replace(/^[-*•]\s*/, "").replace(/\|/g, " ").replace(/\s+/g, " ").trim();
-    if (cleaned.length < 3) continue;
-    if (/^(item|amount|comment)$/i.test(cleaned)) continue;
-    current.items.push(cleaned);
-  }
-
-  pushCurrent();
-  return sections
-    .map((section) => ({
-      title: section.title,
-      items: section.items,
-    }))
-    .filter((section) => section.items.length);
-}
-
 export default function AIInsights({
   report,
   aiState,
@@ -75,7 +35,33 @@ export default function AIInsights({
     totals.income > 0 ? t("ai.promptAllocation", "Based on my current income, how much should go to spending, investing, and emergency reserves?") : "",
     t("ai.promptNextActions", "What are the next three actions that would improve my finances this month?"),
   ].filter(Boolean);
-  const modelSections = aiState.language === language ? parseModelSections(aiState.externalText) : [];
+  const takeawaySections = report ? [
+    {
+      title: t("ai.overview", "Overview"),
+      items: [report.headline, ...(report.summary || [])],
+    },
+    {
+      title: t("ai.nextMoves", "Next Best Moves"),
+      items: report.tips || [],
+    },
+    {
+      title: t("ai.savingsOpp", "Savings Opportunities"),
+      items: report.opportunities || [],
+    },
+    {
+      title: t("ai.investGuidance", "Investment Guidance"),
+      items: report.investmentIdeas || [],
+    },
+    {
+      title: t("ai.anomalyWatch", "Anomaly Watch"),
+      items: report.anomalies?.length ? report.anomalies : [t("ai.noAnomalies", "No unusual transactions were flagged in the current scan.")],
+    },
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(Boolean),
+    }))
+    .filter((section) => section.items.length) : [];
 
   return (
     <>
@@ -111,11 +97,11 @@ export default function AIInsights({
 
       {report ? (
         <div className="ai-layout">
-          {!!modelSections.length && (
+          {!!takeawaySections.length && (
             <div className="section-card ai-takeaways-card">
               <h3>{t("ai.keyTakeaways", "Key Takeaways")}</h3>
               <div className="takeaway-stack">
-                {modelSections.map((section) => (
+                {takeawaySections.map((section) => (
                   <div key={section.title} className="takeaway-row">
                     <strong>{localizeKnownText(language, section.title)}</strong>
                     <ul className="takeaway-inline-list">

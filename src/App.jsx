@@ -1728,7 +1728,7 @@ export default function App() {
             },
           },
         });
-        externalText = response.text || "";
+        externalText = language === "en" ? response.text || "" : "";
       }
       setAiState({ loading: false, error: "", externalText, report: heuristicReport, language });
       showToast(t("toast.insightsRefreshed", "Insights refreshed."));
