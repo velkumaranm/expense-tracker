@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { auth, db } from "./firebase";
 import {
   browserLocalPersistence,
@@ -76,6 +76,42 @@ const Settings = lazy(() => import("./components/Settings"));
 const DocumentsVault = lazy(() => import("./components/DocumentsVault"));
 const TimelineView = lazy(() => import("./components/TimelineView"));
 
+class PageErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error("Finwise page crashed", error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="section-card page-crash-card">
+          <h2>Something needs attention</h2>
+          <p>This workspace hit a display issue, but the rest of Finwise is still safe. Try another section or refresh this page.</p>
+          <pre>{this.state.error?.message || "Unknown page error"}</pre>
+          <button className="btn-primary" onClick={() => this.setState({ error: null })}>Try again</button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 const LIVE_MARKET_CATEGORIES = new Set([
   "Stocks — NSE/BSE",
   "Stocks — US",
@@ -135,9 +171,8 @@ function portfolioHoldingsSignature(items = []) {
 }
 
 function sanitizePortfolioSnapshots(holdings = [], snapshots = []) {
-  const currentSignature = portfolioHoldingsSignature(holdings);
   return (Array.isArray(snapshots) ? snapshots : [])
-    .filter((item) => item && item.signature && item.signature === currentSignature)
+    .filter(Boolean)
     .slice(0, 30);
 }
 
@@ -153,6 +188,27 @@ function sortRecordsById(items = []) {
   return [...(Array.isArray(items) ? items : [])].sort((a, b) =>
     String(a?.id || "").localeCompare(String(b?.id || ""))
   );
+}
+
+function mergeById(...sources) {
+  const merged = new Map();
+  sources.flat().filter(Boolean).forEach((item) => {
+    const id = String(item?.id || "");
+    if (!id) return;
+    merged.set(id, { ...(merged.get(id) || {}), ...item, id });
+  });
+  return sortRecordsById([...merged.values()]);
+}
+
+function recoverCloudWithLocal({ cloudItems = [], localItems = [], legacyItems = [], normalize = (item) => item }) {
+  const local = sortRecordsById((Array.isArray(localItems) ? localItems : []).map(normalize));
+  const legacy = sortRecordsById((Array.isArray(legacyItems) ? legacyItems : []).map(normalize));
+  const strongestLocal = local.length >= legacy.length ? local : legacy;
+  if (!strongestLocal.length) return sortRecordsById(cloudItems);
+  if (!cloudItems.length || strongestLocal.length > cloudItems.length) {
+    return mergeById(cloudItems, strongestLocal);
+  }
+  return sortRecordsById(cloudItems);
 }
 
 function cleanObject(value) {
@@ -252,6 +308,7 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [lastUndo, setLastUndo] = useState(null);
+  const [ignoredSmartRuleSuggestionIds, setIgnoredSmartRuleSuggestionIds] = useState([]);
   const [toast, setToast] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(toYYYYMM(new Date()));
   const [passkeyProfiles, setPasskeyProfiles] = useState(() => getStoredPasskeys());
@@ -405,24 +462,22 @@ export default function App() {
       );
       cloudGoalIdsRef.current = new Set(cloudItems.map((item) => item.id));
 
-      let nextItems = cloudItems;
-      if (!cloudItems.length) {
-        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []);
-        const strongestLocal = Array.isArray(localFallback) && localFallback.length
-          ? localFallback
-          : Array.isArray(legacyGoalsRef.current) && legacyGoalsRef.current.length
-            ? legacyGoalsRef.current
-            : [];
-        if (strongestLocal.length) {
-          nextItems = sortRecordsById(strongestLocal.map(normalizeCollectionRecord));
-          const batch = writeBatch(db);
-          nextItems.forEach((item) => {
-            const { id, ...payload } = item;
-            batch.set(doc(db, "users", uid, "goals", id), payload, { merge: true });
-          });
-          await batch.commit();
-          cloudGoalIdsRef.current = new Set(nextItems.map((item) => item.id));
-        }
+      const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "goals")), []);
+      let nextItems = recoverCloudWithLocal({
+        cloudItems,
+        localItems: localFallback,
+        legacyItems: legacyGoalsRef.current,
+        normalize: normalizeCollectionRecord,
+      });
+      const recoveredItems = nextItems.filter((item) => !cloudGoalIdsRef.current.has(item.id));
+      if (recoveredItems.length) {
+        const batch = writeBatch(db);
+        recoveredItems.forEach((item) => {
+          const { id, ...payload } = item;
+          batch.set(doc(db, "users", uid, "goals", id), payload, { merge: true });
+        });
+        await batch.commit();
+        cloudGoalIdsRef.current = new Set(nextItems.map((item) => item.id));
       }
 
       lastGoalsSerializedRef.current = JSON.stringify(nextItems);
@@ -446,24 +501,22 @@ export default function App() {
       );
       cloudAssetIdsRef.current = new Set(cloudItems.map((item) => item.id));
 
-      let nextItems = cloudItems;
-      if (!cloudItems.length) {
-        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []);
-        const strongestLocal = Array.isArray(localFallback) && localFallback.length
-          ? localFallback
-          : Array.isArray(legacyAssetsRef.current) && legacyAssetsRef.current.length
-            ? legacyAssetsRef.current
-            : [];
-        if (strongestLocal.length) {
-          nextItems = sortRecordsById(strongestLocal.map(normalizeCollectionRecord));
-          const batch = writeBatch(db);
-          nextItems.forEach((item) => {
-            const { id, ...payload } = item;
-            batch.set(doc(db, "users", uid, "assets", id), payload, { merge: true });
-          });
-          await batch.commit();
-          cloudAssetIdsRef.current = new Set(nextItems.map((item) => item.id));
-        }
+      const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "assets")), []);
+      let nextItems = recoverCloudWithLocal({
+        cloudItems,
+        localItems: localFallback,
+        legacyItems: legacyAssetsRef.current,
+        normalize: normalizeCollectionRecord,
+      });
+      const recoveredItems = nextItems.filter((item) => !cloudAssetIdsRef.current.has(item.id));
+      if (recoveredItems.length) {
+        const batch = writeBatch(db);
+        recoveredItems.forEach((item) => {
+          const { id, ...payload } = item;
+          batch.set(doc(db, "users", uid, "assets", id), payload, { merge: true });
+        });
+        await batch.commit();
+        cloudAssetIdsRef.current = new Set(nextItems.map((item) => item.id));
       }
 
       lastAssetsSerializedRef.current = JSON.stringify(nextItems);
@@ -487,24 +540,22 @@ export default function App() {
       );
       cloudLiabilityIdsRef.current = new Set(cloudItems.map((item) => item.id));
 
-      let nextItems = cloudItems;
-      if (!cloudItems.length) {
-        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []);
-        const strongestLocal = Array.isArray(localFallback) && localFallback.length
-          ? localFallback
-          : Array.isArray(legacyLiabilitiesRef.current) && legacyLiabilitiesRef.current.length
-            ? legacyLiabilitiesRef.current
-            : [];
-        if (strongestLocal.length) {
-          nextItems = sortRecordsById(strongestLocal.map(normalizeCollectionRecord));
-          const batch = writeBatch(db);
-          nextItems.forEach((item) => {
-            const { id, ...payload } = item;
-            batch.set(doc(db, "users", uid, "liabilities", id), payload, { merge: true });
-          });
-          await batch.commit();
-          cloudLiabilityIdsRef.current = new Set(nextItems.map((item) => item.id));
-        }
+      const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "liabilities")), []);
+      let nextItems = recoverCloudWithLocal({
+        cloudItems,
+        localItems: localFallback,
+        legacyItems: legacyLiabilitiesRef.current,
+        normalize: normalizeCollectionRecord,
+      });
+      const recoveredItems = nextItems.filter((item) => !cloudLiabilityIdsRef.current.has(item.id));
+      if (recoveredItems.length) {
+        const batch = writeBatch(db);
+        recoveredItems.forEach((item) => {
+          const { id, ...payload } = item;
+          batch.set(doc(db, "users", uid, "liabilities", id), payload, { merge: true });
+        });
+        await batch.commit();
+        cloudLiabilityIdsRef.current = new Set(nextItems.map((item) => item.id));
       }
 
       lastLiabilitiesSerializedRef.current = JSON.stringify(nextItems);
@@ -577,27 +628,26 @@ export default function App() {
       );
       cloudHoldingIdsRef.current = new Set(cloudItems.map((item) => item.id));
 
-      let nextItems = cloudItems;
-      if (!cloudItems.length) {
-        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "holdings")), []);
-        const localBackup = readHoldingBackup(uid).holdings;
-        const strongestLocal = Array.isArray(localFallback) && localFallback.length
-          ? localFallback
-          : Array.isArray(localBackup) && localBackup.length
-            ? localBackup
-            : Array.isArray(legacyHoldingsRef.current) && legacyHoldingsRef.current.length
-              ? legacyHoldingsRef.current
-              : [];
-        if (strongestLocal.length) {
-          nextItems = sortRecordsById(strongestLocal.map(normalizeHoldingRecord));
-          const batch = writeBatch(db);
-          nextItems.forEach((item) => {
-            const { id, ...payload } = item;
-            batch.set(doc(db, "users", uid, "holdings", id), payload, { merge: true });
-          });
-          await batch.commit();
-          cloudHoldingIdsRef.current = new Set(nextItems.map((item) => item.id));
-        }
+      const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "holdings")), []);
+      const localBackup = readHoldingBackup(uid).holdings;
+      const nextItems = recoverCloudWithLocal({
+        cloudItems,
+        localItems: mergeById(
+          (Array.isArray(localFallback) ? localFallback : []).map(normalizeHoldingRecord),
+          (Array.isArray(localBackup) ? localBackup : []).map(normalizeHoldingRecord)
+        ),
+        legacyItems: legacyHoldingsRef.current,
+        normalize: normalizeHoldingRecord,
+      });
+      const recoveredItems = nextItems.filter((item) => !cloudHoldingIdsRef.current.has(item.id));
+      if (recoveredItems.length) {
+        const batch = writeBatch(db);
+        recoveredItems.forEach((item) => {
+          const { id, ...payload } = item;
+          batch.set(doc(db, "users", uid, "holdings", id), payload, { merge: true });
+        });
+        await batch.commit();
+        cloudHoldingIdsRef.current = new Set(nextItems.map((item) => item.id));
       }
 
       lastHoldingsSerializedRef.current = JSON.stringify(nextItems);
@@ -621,24 +671,22 @@ export default function App() {
       );
       cloudVaultDocIdsRef.current = new Set(cloudItems.map((item) => item.id));
 
-      let nextItems = cloudItems;
-      if (!cloudItems.length) {
-        const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "vault-docs")), []);
-        const strongestLocal = Array.isArray(localFallback) && localFallback.length
-          ? localFallback
-          : Array.isArray(legacyVaultDocsRef.current) && legacyVaultDocsRef.current.length
-            ? legacyVaultDocsRef.current
-            : [];
-        if (strongestLocal.length) {
-          nextItems = sortRecordsById(strongestLocal.map(normalizeVaultDocRecord));
-          const batch = writeBatch(db);
-          nextItems.forEach((item) => {
-            const { id, ...payload } = item;
-            batch.set(doc(db, "users", uid, "vaultDocs", id), payload, { merge: true });
-          });
-          await batch.commit();
-          cloudVaultDocIdsRef.current = new Set(nextItems.map((item) => item.id));
-        }
+      const localFallback = safeJSON(localStorage.getItem(getStorageKey(uid, "vault-docs")), []);
+      let nextItems = recoverCloudWithLocal({
+        cloudItems,
+        localItems: localFallback,
+        legacyItems: legacyVaultDocsRef.current,
+        normalize: normalizeVaultDocRecord,
+      });
+      const recoveredItems = nextItems.filter((item) => !cloudVaultDocIdsRef.current.has(item.id));
+      if (recoveredItems.length) {
+        const batch = writeBatch(db);
+        recoveredItems.forEach((item) => {
+          const { id, ...payload } = item;
+          batch.set(doc(db, "users", uid, "vaultDocs", id), payload, { merge: true });
+        });
+        await batch.commit();
+        cloudVaultDocIdsRef.current = new Set(nextItems.map((item) => item.id));
       }
 
       lastVaultDocsSerializedRef.current = JSON.stringify(nextItems);
@@ -714,6 +762,7 @@ export default function App() {
         plannerState: { ...DEFAULT_PLANNER_STATE, ...safeJSON(localStorage.getItem(getStorageKey(uid, "planner-state")), {}) },
         aiConfig: { provider: "openrouter", model: "openrouter/free", freeModel: "openrouter/free", ...safeJSON(localStorage.getItem(getStorageKey(uid, "ai-config")), {}) },
         budget: localStorage.getItem(getStorageKey(uid, "budget")) || "",
+        ignoredSmartRuleSuggestionIds: safeJSON(localStorage.getItem(getStorageKey(uid, "ignored-smart-rules")), []),
         role: localStorage.getItem(getStorageKey(uid, "role")) || "user",
         notificationsEnabled: (() => {
           const savedNotif = localStorage.getItem(getStorageKey(uid, "notifications"));
@@ -743,6 +792,7 @@ export default function App() {
       setAiConfig(data.aiConfig || localFallback.aiConfig);
       setBudget(data.budget || "");
       setBudgetInput(data.budget || "");
+      setIgnoredSmartRuleSuggestionIds(Array.isArray(data.ignoredSmartRuleSuggestionIds) ? data.ignoredSmartRuleSuggestionIds : []);
       setNotificationsEnabled(data.notificationsEnabled !== false);
       setUserRole((current) => (current === "admin" ? "admin" : "user"));
 
@@ -753,6 +803,7 @@ export default function App() {
         plannerState: { ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) },
         aiConfig: data.aiConfig || localFallback.aiConfig,
         budget: data.budget || "",
+        ignoredSmartRuleSuggestionIds: Array.isArray(data.ignoredSmartRuleSuggestionIds) ? data.ignoredSmartRuleSuggestionIds : [],
         role: data.role || "user",
         notificationsEnabled: data.notificationsEnabled !== false,
       });
@@ -766,6 +817,7 @@ export default function App() {
           plannerState: { ...DEFAULT_PLANNER_STATE, ...(data.plannerState || {}) },
           aiConfig: data.aiConfig || localFallback.aiConfig,
           budget: data.budget || "",
+          ignoredSmartRuleSuggestionIds: Array.isArray(data.ignoredSmartRuleSuggestionIds) ? data.ignoredSmartRuleSuggestionIds : [],
           role: data.role || "user",
           notificationsEnabled: data.notificationsEnabled !== false,
         });
@@ -780,9 +832,10 @@ export default function App() {
     plannerState,
     aiConfig,
     budget,
+    ignoredSmartRuleSuggestionIds,
     role: userRole,
     notificationsEnabled,
-  }), [marketDisplayCurrency, language, onboardingState, plannerState, aiConfig, budget, userRole, notificationsEnabled]);
+  }), [marketDisplayCurrency, language, onboardingState, plannerState, aiConfig, budget, ignoredSmartRuleSuggestionIds, userRole, notificationsEnabled]);
 
   useEffect(() => {
     if (!user || !profileReadyRef.current) return;
@@ -793,7 +846,7 @@ export default function App() {
   }, [profileState, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !goalsReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "goals"), JSON.stringify(goals));
   }, [goals, user]);
   useEffect(() => {
@@ -802,21 +855,15 @@ export default function App() {
     const nextSerialized = JSON.stringify(nextItems);
     if (nextSerialized === lastGoalsSerializedRef.current) return;
     lastGoalsSerializedRef.current = nextSerialized;
-    const nextIds = new Set(nextItems.map((item) => item.id));
     const batch = writeBatch(db);
     nextItems.forEach((item) => {
       const { id, ...payload } = item;
       batch.set(doc(db, "users", user.uid, "goals", id), payload, { merge: true });
     });
-    for (const id of cloudGoalIdsRef.current) {
-      if (!nextIds.has(id)) {
-        batch.delete(doc(db, "users", user.uid, "goals", id));
-      }
-    }
     batch.commit().catch(() => {});
   }, [goals, user]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !assetsReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "assets"), JSON.stringify(assets));
   }, [assets, user]);
   useEffect(() => {
@@ -825,21 +872,15 @@ export default function App() {
     const nextSerialized = JSON.stringify(nextItems);
     if (nextSerialized === lastAssetsSerializedRef.current) return;
     lastAssetsSerializedRef.current = nextSerialized;
-    const nextIds = new Set(nextItems.map((item) => item.id));
     const batch = writeBatch(db);
     nextItems.forEach((item) => {
       const { id, ...payload } = item;
       batch.set(doc(db, "users", user.uid, "assets", id), payload, { merge: true });
     });
-    for (const id of cloudAssetIdsRef.current) {
-      if (!nextIds.has(id)) {
-        batch.delete(doc(db, "users", user.uid, "assets", id));
-      }
-    }
     batch.commit().catch(() => {});
   }, [assets, user]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !liabilitiesReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "liabilities"), JSON.stringify(liabilities));
   }, [liabilities, user]);
   useEffect(() => {
@@ -848,21 +889,15 @@ export default function App() {
     const nextSerialized = JSON.stringify(nextItems);
     if (nextSerialized === lastLiabilitiesSerializedRef.current) return;
     lastLiabilitiesSerializedRef.current = nextSerialized;
-    const nextIds = new Set(nextItems.map((item) => item.id));
     const batch = writeBatch(db);
     nextItems.forEach((item) => {
       const { id, ...payload } = item;
       batch.set(doc(db, "users", user.uid, "liabilities", id), payload, { merge: true });
     });
-    for (const id of cloudLiabilityIdsRef.current) {
-      if (!nextIds.has(id)) {
-        batch.delete(doc(db, "users", user.uid, "liabilities", id));
-      }
-    }
     batch.commit().catch(() => {});
   }, [liabilities, user]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !holdingsReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "holdings"), JSON.stringify(holdings));
     if (Array.isArray(holdings) && holdings.length) {
       localStorage.setItem(getStorageKey(user.uid, "holdings-backup"), JSON.stringify(holdings));
@@ -874,21 +909,15 @@ export default function App() {
     const nextSerialized = JSON.stringify(nextItems);
     if (nextSerialized === lastHoldingsSerializedRef.current) return;
     lastHoldingsSerializedRef.current = nextSerialized;
-    const nextIds = new Set(nextItems.map((item) => item.id));
     const batch = writeBatch(db);
     nextItems.forEach((item) => {
       const { id, ...payload } = item;
       batch.set(doc(db, "users", user.uid, "holdings", id), payload, { merge: true });
     });
-    for (const id of cloudHoldingIdsRef.current) {
-      if (!nextIds.has(id)) {
-        batch.delete(doc(db, "users", user.uid, "holdings", id));
-      }
-    }
     batch.commit().catch(() => {});
   }, [holdings, user]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !snapshotsReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "portfolio-snapshots"), JSON.stringify(portfolioSnapshots));
     if (Array.isArray(portfolioSnapshots) && portfolioSnapshots.length) {
       localStorage.setItem(getStorageKey(user.uid, "portfolio-snapshots-backup"), JSON.stringify(portfolioSnapshots));
@@ -902,17 +931,11 @@ export default function App() {
     const nextSerialized = JSON.stringify(nextItems);
     if (nextSerialized === lastSnapshotsSerializedRef.current) return;
     lastSnapshotsSerializedRef.current = nextSerialized;
-    const nextIds = new Set(nextItems.map((item) => item.id));
     const batch = writeBatch(db);
     nextItems.forEach((item) => {
       const { id, ...payload } = item;
       batch.set(doc(db, "users", user.uid, "portfolioSnapshots", id), payload, { merge: true });
     });
-    for (const id of cloudSnapshotIdsRef.current) {
-      if (!nextIds.has(id)) {
-        batch.delete(doc(db, "users", user.uid, "portfolioSnapshots", id));
-      }
-    }
     batch.commit().catch(() => {});
   }, [portfolioSnapshots, user]);
   useEffect(() => {
@@ -932,7 +955,7 @@ export default function App() {
     localStorage.setItem(getStorageKey(user.uid, "planner-state"), JSON.stringify(plannerState));
   }, [plannerState, user]);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !vaultDocsReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "vault-docs"), JSON.stringify(vaultDocs));
   }, [vaultDocs, user]);
   useEffect(() => {
@@ -941,17 +964,11 @@ export default function App() {
     const nextSerialized = JSON.stringify(nextItems);
     if (nextSerialized === lastVaultDocsSerializedRef.current) return;
     lastVaultDocsSerializedRef.current = nextSerialized;
-    const nextIds = new Set(nextItems.map((item) => item.id));
     const batch = writeBatch(db);
     nextItems.forEach((item) => {
       const { id, ...payload } = item;
       batch.set(doc(db, "users", user.uid, "vaultDocs", id), payload, { merge: true });
     });
-    for (const id of cloudVaultDocIdsRef.current) {
-      if (!nextIds.has(id)) {
-        batch.delete(doc(db, "users", user.uid, "vaultDocs", id));
-      }
-    }
     batch.commit().catch(() => {});
   }, [vaultDocs, user]);
   useEffect(() => {
@@ -1180,6 +1197,51 @@ export default function App() {
       recurring: false,
       recurringFrequency: null,
     });
+  }, [user]);
+
+  const deleteGoalRecord = useCallback(async (id) => {
+    if (!id) return;
+    setGoals((prev) => prev.filter((item) => item.id !== id));
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "goals", id)).catch(() => {});
+      cloudGoalIdsRef.current.delete(id);
+    }
+  }, [user]);
+
+  const deleteAssetRecord = useCallback(async (id) => {
+    if (!id) return;
+    setAssets((prev) => prev.filter((item) => item.id !== id));
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "assets", id)).catch(() => {});
+      cloudAssetIdsRef.current.delete(id);
+    }
+  }, [user]);
+
+  const deleteLiabilityRecord = useCallback(async (id) => {
+    if (!id) return;
+    setLiabilities((prev) => prev.filter((item) => item.id !== id));
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "liabilities", id)).catch(() => {});
+      cloudLiabilityIdsRef.current.delete(id);
+    }
+  }, [user]);
+
+  const deleteHoldingRecord = useCallback(async (id) => {
+    if (!id) return;
+    setHoldings((prev) => prev.filter((item) => item.id !== id));
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "holdings", id)).catch(() => {});
+      cloudHoldingIdsRef.current.delete(id);
+    }
+  }, [user]);
+
+  const deleteVaultDocRecord = useCallback(async (id) => {
+    if (!id) return;
+    setVaultDocs((prev) => prev.filter((item) => item.id !== id));
+    if (user) {
+      await deleteDoc(doc(db, "users", user.uid, "vaultDocs", id)).catch(() => {});
+      cloudVaultDocIdsRef.current.delete(id);
+    }
   }, [user]);
 
   const seedDemoWorkspace = useCallback(async () => {
@@ -1453,16 +1515,40 @@ export default function App() {
     return [...seen.values()].reduce((sum, count) => sum + Math.max(count - 1, 0), 0);
   }, [expenses]);
 
-  const smartRuleSuggestions = useMemo(() => {
+  useEffect(() => {
+    if (!user) return;
+    localStorage.setItem(getStorageKey(user.uid, "ignored-smart-rules"), JSON.stringify(ignoredSmartRuleSuggestionIds));
+  }, [ignoredSmartRuleSuggestionIds, user]);
+
+  const detectedSmartRuleSuggestions = useMemo(() => {
     const rules = [
-      { type: "expense", category: "Subscriptions", test: /netflix|spotify|prime|hotstar|youtube|icloud|apple|google one|canva|subscription/i },
-      { type: "expense", category: "EMI / Loan", test: /\bemi\b|loan|mortgage|repayment/i },
-      { type: "expense", category: "Home & Rent", test: /rent|lease|maintenance/i },
-      { type: "expense", category: "Fuel", test: /fuel|petrol|diesel|shell|bharat petroleum|indian oil|hpcl/i },
-      { type: "expense", category: "Medicines", test: /medicine|pharmacy|apollo pharmacy|medplus|tablet|clinic/i },
-      { type: "income", category: "Salary", test: /salary|payroll|wage|monthly pay/i },
-      { type: "insurance", category: "Term Life Insurance", test: /term life|life insurance/i },
-      { type: "insurance", category: "Health Insurance — Family", test: /health insurance|medical policy|family floater/i },
+      { type: "expense", category: "Subscriptions", confidence: 92, test: /netflix|spotify|prime|hotstar|youtube|icloud|apple|google one|canva|subscription|renewal|ott/i },
+      { type: "expense", category: "EMI / Loan", confidence: 94, test: /\bemi\b|loan|mortgage|repayment|installment|instalment|home loan|personal loan|vehicle loan/i },
+      { type: "expense", category: "Home & Rent", confidence: 90, test: /rent|lease|maintenance|apartment|flat rent|house rent/i },
+      { type: "expense", category: "Fuel", confidence: 88, test: /fuel|petrol|diesel|shell|bharat petroleum|indian oil|hpcl|bpcl|iocl/i },
+      { type: "expense", category: "Medicines", confidence: 88, test: /medicine|pharmacy|apollo pharmacy|medplus|tablet|clinic|medical store/i },
+      { type: "expense", category: "Healthcare", confidence: 86, test: /hospital|doctor|diagnostic|lab test|scan|healthcare|consultation/i },
+      { type: "expense", category: "Food & Dining", confidence: 84, test: /zomato|swiggy|restaurant|cafe|food|dining|hotel food|lunch|dinner/i },
+      { type: "expense", category: "Groceries", confidence: 86, test: /grocery|groceries|bigbasket|blinkit|zepto|dmart|supermarket|mart|provision/i },
+      { type: "expense", category: "Transport", confidence: 84, test: /uber|ola|rapido|metro|bus|train|cab|taxi|auto/i },
+      { type: "expense", category: "Travel", confidence: 84, test: /flight|airline|hotel booking|booking\.com|makemytrip|goibibo|irctc|travel/i },
+      { type: "expense", category: "Mobile / Internet", confidence: 86, test: /mobile bill|postpaid|prepaid|airtel|jio|vi bill|vodafone|internet|wifi|broadband|fiber/i },
+      { type: "expense", category: "Utilities & Bills", confidence: 84, test: /electricity|water bill|gas bill|utility|utilities|eb bill|tneb|bescom|kseb/i },
+      { type: "expense", category: "Education", confidence: 83, test: /school|tuition|college|course|udemy|coursera|exam fee|education/i },
+      { type: "expense", category: "Taxes", confidence: 83, test: /tax|income tax|property tax|gst|tds/i },
+      { type: "income", category: "Salary", confidence: 96, test: /salary|payroll|wage|monthly pay|credited salary|sal cr/i },
+      { type: "income", category: "Interest", confidence: 88, test: /interest|int\.?|savings interest|fd interest/i },
+      { type: "income", category: "Dividend", confidence: 88, test: /dividend|div payout/i },
+      { type: "investment", category: "SIP", confidence: 90, test: /\bsip\b|systematic investment/i },
+      { type: "investment", category: "Mutual Fund — Equity", confidence: 84, test: /mutual fund|equity fund|elss|index fund|amc/i },
+      { type: "investment", category: "Stocks — NSE/BSE", confidence: 84, test: /nse|bse|zerodha|groww|stock|equity share|demat/i },
+      { type: "investment", category: "PPF", confidence: 92, test: /\bppf\b|public provident/i },
+      { type: "investment", category: "NPS", confidence: 92, test: /\bnps\b|national pension/i },
+      { type: "insurance", category: "PLI (Postal Life Insurance)", confidence: 96, test: /\bpli\b|postal life|post office life/i },
+      { type: "insurance", category: "Term Life Insurance", confidence: 92, test: /term life|life insurance|term plan/i, exclude: /\bpli\b|postal life|post office life/i },
+      { type: "insurance", category: "Health Insurance — Family", confidence: 90, test: /health insurance|medical policy|family floater|mediclaim/i },
+      { type: "insurance", category: "Car Insurance", confidence: 88, test: /car insurance|motor insurance|vehicle insurance/i },
+      { type: "insurance", category: "Two-Wheeler Insurance", confidence: 88, test: /bike insurance|two wheeler|2 wheeler|scooter insurance/i },
     ];
     return expenses.flatMap((item) => {
       const haystack = `${item.category || ""} ${item.note || ""}`.toLowerCase();
@@ -1470,6 +1556,7 @@ export default function App() {
         rule.type === item.type &&
         item.category !== rule.category &&
         ALL_CATS[item.type]?.includes(rule.category) &&
+        !rule.exclude?.test(haystack) &&
         rule.test.test(haystack)
       );
       if (!match) return [];
@@ -1481,9 +1568,16 @@ export default function App() {
         from: item.category,
         to: match.category,
         type: item.type,
+        confidence: match.confidence || 80,
+        reason: item.note || item.category || item.type,
       }];
     }).slice(0, 30);
   }, [expenses]);
+
+  const smartRuleSuggestions = useMemo(() => {
+    const ignored = new Set(ignoredSmartRuleSuggestionIds);
+    return detectedSmartRuleSuggestions.filter((item) => !ignored.has(item.id));
+  }, [detectedSmartRuleSuggestions, ignoredSmartRuleSuggestionIds]);
 
   const dataConfidence = useMemo(() => {
     const now = Date.now();
@@ -1534,6 +1628,16 @@ export default function App() {
     monthTotals.savingsRate = monthTotals.income > 0 ? ((monthTotals.income - monthTotals.expense) / monthTotals.income) * 100 : 0;
     const categoryRows = buildPie(items, "expense").slice(0, 3);
     const goalGap = goals.reduce((sum, goal) => sum + Math.max(Number(goal.targetAmount || 0) - Number(goal.currentAmount || 0), 0), 0);
+    const alertActions = alerts
+      .filter((item) => item.tone !== "good")
+      .map((item, index) => ({
+        id: `alert-${index}`,
+        type: "alert",
+        tone: item.tone,
+        title: item.title,
+        body: item.body,
+      }));
+    const reviewActions = alertActions;
     return {
       label,
       totals: monthTotals,
@@ -1542,13 +1646,22 @@ export default function App() {
       recurringAnnual,
       goalGap,
       portfolioGainLoss,
-      actionCount: alerts.filter((item) => item.tone !== "good").length + smartRuleSuggestions.length,
+      actionCount: reviewActions.length,
+      actions: reviewActions,
     };
-  }, [alerts, currentMonth, expenses, goals, portfolioGainLoss, recurringAnnual, selectedMonth, smartRuleSuggestions.length, subscriptionMonthly]);
+  }, [alerts, currentMonth, expenses, goals, portfolioGainLoss, recurringAnnual, selectedMonth, subscriptionMonthly]);
 
-  const applySmartRuleSuggestions = useCallback(async () => {
+  const applySmartRuleSuggestions = useCallback(async (targetIds = null) => {
     if (!user || !smartRuleSuggestions.length) return;
-    const suggestionMap = new Map(smartRuleSuggestions.map((item) => [item.id, item]));
+    const targetSet = Array.isArray(targetIds)
+      ? new Set(targetIds)
+      : typeof targetIds === "string"
+        ? new Set([targetIds])
+        : null;
+    const selectedSuggestions = targetSet
+      ? smartRuleSuggestions.filter((item) => targetSet.has(item.id))
+      : smartRuleSuggestions;
+    const suggestionMap = new Map(selectedSuggestions.map((item) => [item.id, item]));
     const affected = expenses
       .filter((item) => suggestionMap.has(item.id))
       .map((item) => ({
@@ -1566,8 +1679,16 @@ export default function App() {
     });
     await batch.commit();
     setLastUndo({ type: "smart-rules", affected, createdAt: Date.now() });
-    showToast(`${affected.length} rule suggestion(s) applied.`, "success");
-  }, [expenses, showToast, smartRuleSuggestions, user]);
+    showToast(t("toast.ruleSuggestionsApplied", "{count} rule suggestion(s) applied.").replace("{count}", affected.length), "success");
+  }, [expenses, showToast, smartRuleSuggestions, t, user]);
+
+  const ignoreSmartRuleSuggestion = useCallback((targetId) => {
+    if (!targetId) return;
+    setIgnoredSmartRuleSuggestionIds((current) => (
+      current.includes(targetId) ? current : [...current, targetId].slice(-250)
+    ));
+    showToast(t("toast.ruleSuggestionIgnored", "Suggestion ignored."), "info");
+  }, [showToast, t]);
 
   const undoLastChange = useCallback(async () => {
     if (!user || !lastUndo?.affected?.length) return;
@@ -1968,6 +2089,7 @@ export default function App() {
           monthlyReview={monthlyReview}
           smartRuleSuggestions={smartRuleSuggestions}
           onApplySmartRules={applySmartRuleSuggestions}
+          onIgnoreSmartRule={ignoreSmartRuleSuggestion}
           lastUndo={lastUndo}
           onUndo={undoLastChange}
           onExportMonthlyReview={exportMonthlyReview}
@@ -1978,6 +2100,7 @@ export default function App() {
           onJumpToGoals={() => setActiveTab("goals")}
           onJumpToNetWorth={() => setActiveTab("wealth")}
           onJumpToVault={() => setActiveTab("vault")}
+          onJumpToAi={() => setActiveTab("ai")}
         />
       );
     }
@@ -2017,6 +2140,7 @@ export default function App() {
         <GoalsTargets
           goals={goals}
           setGoals={setGoals}
+          onDeleteGoal={deleteGoalRecord}
           plannerState={plannerState}
           setPlannerState={setPlannerState}
           totals={totals}
@@ -2039,13 +2163,16 @@ export default function App() {
         <NetWorthTracker
           assets={assets}
           setAssets={setAssets}
+          onDeleteAsset={deleteAssetRecord}
           liabilities={liabilities}
           setLiabilities={setLiabilities}
+          onDeleteLiability={deleteLiabilityRecord}
           trackedCash={trackedCash}
           trackedInvestments={trackedInvestments}
           netWorth={netWorth}
           holdings={holdings}
           setHoldings={setHoldings}
+          onDeleteHolding={deleteHoldingRecord}
           snapshots={portfolioSnapshots}
           setSnapshots={setPortfolioSnapshots}
           marketProviders={backendHealth.marketProviders}
@@ -2064,6 +2191,7 @@ export default function App() {
         <DocumentsVault
           docs={vaultDocs}
           setDocs={setVaultDocs}
+          onDeleteDoc={deleteVaultDocRecord}
           showToast={showToast}
           user={user}
         />
@@ -2200,9 +2328,11 @@ export default function App() {
 
         <main className="main">
           <div className="content">
-            <Suspense fallback={tabLoadingFallback}>
-              {renderActiveTab()}
-            </Suspense>
+            <PageErrorBoundary resetKey={activeTab}>
+              <Suspense fallback={tabLoadingFallback}>
+                {renderActiveTab()}
+              </Suspense>
+            </PageErrorBoundary>
           </div>
         </main>
 

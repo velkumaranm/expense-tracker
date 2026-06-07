@@ -12,23 +12,25 @@ import { fmtINR } from "../lib/utils";
 import { getCategoryLabel, getTypeLabel, useI18n } from "../lib/i18n";
 
 export default function History({
-  filtered,
-  search,
-  setSearch,
-  filterCategory,
-  setFilterCategory,
-  filterType,
-  setFilterType,
-  recurringOnly,
-  setRecurringOnly,
-  onEdit,
-  onDelete,
-  onExport,
-  months,
-  selectedMonth,
-  setSelectedMonth,
+  filtered = [],
+  search = "",
+  setSearch = () => {},
+  filterCategory = "",
+  setFilterCategory = () => {},
+  filterType = "all",
+  setFilterType = () => {},
+  recurringOnly = false,
+  setRecurringOnly = () => {},
+  onEdit = () => {},
+  onDelete = () => {},
+  onExport = () => {},
+  months = [],
+  selectedMonth = "all",
+  setSelectedMonth = () => {},
 }) {
   const { t, language } = useI18n();
+  filtered = Array.isArray(filtered) ? filtered : [];
+  months = Array.isArray(months) ? months : [];
   const allCats = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...INVESTMENT_CATEGORIES, ...INSURANCE_CATEGORIES];
 
   return (

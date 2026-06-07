@@ -15,14 +15,33 @@ import { PIE_COLORS } from "../lib/constants";
 import { AreaTip } from "./ChartBits";
 
 export default function AnalyticsReports({
-  monthlySeries,
-  yoyComparison,
-  categoryTrendSeries,
-  heatmap,
-  onExportPdf,
-  onExportCsv,
+  monthlySeries = [],
+  yoyComparison = {
+    incomeDelta: "—",
+    expenseDelta: "—",
+    investDelta: "—",
+    savingsDelta: "—",
+    expenseUp: false,
+    current: { income: 0, expense: 0, investment: 0, savings: 0 },
+    previous: { income: 0, expense: 0, investment: 0, savings: 0 },
+  },
+  categoryTrendSeries = [],
+  heatmap = { rows: [], months: [] },
+  onExportPdf = () => {},
+  onExportCsv = () => {},
 }) {
   const { t, language } = useI18n();
+  const safeMonthlySeries = Array.isArray(monthlySeries) ? monthlySeries : [];
+  const safeCategoryTrendSeries = Array.isArray(categoryTrendSeries) ? categoryTrendSeries : [];
+  const safeHeatmap = {
+    rows: Array.isArray(heatmap?.rows) ? heatmap.rows : [],
+    months: Array.isArray(heatmap?.months) ? heatmap.months : [],
+  };
+  const safeYoy = {
+    ...yoyComparison,
+    current: { income: 0, expense: 0, investment: 0, savings: 0, ...(yoyComparison?.current || {}) },
+    previous: { income: 0, expense: 0, investment: 0, savings: 0, ...(yoyComparison?.previous || {}) },
+  };
   const fmtAxis = (value) => {
     const amount = Number(value || 0);
     if (!amount) return "0";
@@ -31,20 +50,20 @@ export default function AnalyticsReports({
       maximumFractionDigits: amount >= 100000 ? 1 : 0,
     }).format(amount);
   };
-  const validMonths = monthlySeries.filter((month) => month.income || month.expense || month.investment || month.insurance);
+  const validMonths = safeMonthlySeries.filter((month) => month?.income || month?.expense || month?.investment || month?.insurance);
   const bestSavingsMonth = validMonths.reduce((best, month) => (!best || month.savings > best.savings ? month : best), null);
   const worstExpenseMonth = validMonths.reduce((worst, month) => (!worst || month.expense > worst.expense ? month : worst), null);
   const averageSavings = validMonths.length ? validMonths.reduce((sum, month) => sum + month.savings, 0) / validMonths.length : 0;
   const averageExpense = validMonths.length ? validMonths.reduce((sum, month) => sum + month.expense, 0) / validMonths.length : 0;
-  const categoryKeys = Object.keys(categoryTrendSeries[0] || {})
+  const categoryKeys = Object.keys(safeCategoryTrendSeries[0] || {})
     .filter((k) => !["label", "month"].includes(k))
     .map((key) => ({
       key,
-      total: categoryTrendSeries.reduce((sum, row) => sum + Number(row[key] || 0), 0),
+      total: safeCategoryTrendSeries.reduce((sum, row) => sum + Number(row?.[key] || 0), 0),
     }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 4);
-  const latestCategoryMonth = [...categoryTrendSeries]
+  const latestCategoryMonth = [...safeCategoryTrendSeries]
     .reverse()
     .find((row) => categoryKeys.some(({ key }) => Number(row[key] || 0) > 0));
   const categorySnapshot = categoryKeys
@@ -73,23 +92,23 @@ export default function AnalyticsReports({
       <div className="summary-grid">
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.incomeYoY", "Income YoY")}</div>
-          <div className="sc-value" style={{ color: "var(--income)" }}>{yoyComparison.incomeDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.income)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.income)}</div>
+          <div className="sc-value" style={{ color: "var(--income)" }}>{safeYoy.incomeDelta}</div>
+          <div className="sc-sub">{fmtINR(safeYoy.current.income)} {t("common.vs", "vs")} {fmtINR(safeYoy.previous.income)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.expenseYoY", "Expense YoY")}</div>
-          <div className="sc-value" style={{ color: yoyComparison.expenseUp ? "var(--expense)" : "var(--income)" }}>{yoyComparison.expenseDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.expense)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.expense)}</div>
+          <div className="sc-value" style={{ color: safeYoy.expenseUp ? "var(--expense)" : "var(--income)" }}>{safeYoy.expenseDelta}</div>
+          <div className="sc-sub">{fmtINR(safeYoy.current.expense)} {t("common.vs", "vs")} {fmtINR(safeYoy.previous.expense)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.investmentYoY", "Investment YoY")}</div>
-          <div className="sc-value" style={{ color: "var(--invest)" }}>{yoyComparison.investDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.investment)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.investment)}</div>
+          <div className="sc-value" style={{ color: "var(--invest)" }}>{safeYoy.investDelta}</div>
+          <div className="sc-sub">{fmtINR(safeYoy.current.investment)} {t("common.vs", "vs")} {fmtINR(safeYoy.previous.investment)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.savingsYoY", "Savings YoY")}</div>
-          <div className="sc-value" style={{ color: "var(--accent)" }}>{yoyComparison.savingsDelta}</div>
-          <div className="sc-sub">{fmtINR(yoyComparison.current.savings)} {t("common.vs", "vs")} {fmtINR(yoyComparison.previous.savings)}</div>
+          <div className="sc-value" style={{ color: "var(--accent)" }}>{safeYoy.savingsDelta}</div>
+          <div className="sc-sub">{fmtINR(safeYoy.current.savings)} {t("common.vs", "vs")} {fmtINR(safeYoy.previous.savings)}</div>
         </div>
         <div className="summary-card summary-span-3">
           <div className="sc-label">{t("analytics.bestSavings", "Best Savings Month")}</div>
@@ -117,7 +136,7 @@ export default function AnalyticsReports({
         <div className="chart-card chart-span-6">
           <div className="chart-title">{t("analytics.monthlyTrend", "Monthly Trend")}</div>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthlySeries} barGap={8} barCategoryGap="18%">
+            <BarChart data={safeMonthlySeries} barGap={8} barCategoryGap="18%">
               <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis dataKey="label" tick={{ fill: "var(--text3)", fontSize: 10 }} tickMargin={8} axisLine={false} tickLine={false} />
               <YAxis width={64} tickFormatter={fmtAxis} tick={{ fill: "var(--text3)", fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -150,18 +169,18 @@ export default function AnalyticsReports({
         <div className="chart-card chart-span-12">
           <div className="chart-title">{t("analytics.heatMap", "Spending Heat Map")}</div>
           <div className="heat-grid">
-            {!!heatmap.rows.length && (
+            {!!safeHeatmap.rows.length && (
               <div className="heat-row" style={{ fontSize: 10, color: "var(--text3)", fontWeight: 700 }}>
                 <div>{t("analytics.category", "Category")}</div>
-                {heatmap.months.map((m) => <div key={m}>{monthLabel(m)}</div>)}
+                {safeHeatmap.months.map((m) => <div key={m}>{monthLabel(m)}</div>)}
               </div>
             )}
-            {heatmap.rows.map((row) => (
+            {safeHeatmap.rows.map((row) => (
               <div key={row.category} className="heat-row">
                 <div style={{ fontSize: 11, color: "var(--text2)", fontWeight: 600 }}>{getCategoryLabel(language, row.category, row.category)}</div>
-                {row.values.map((value, i) => (
+                {(Array.isArray(row.values) ? row.values : []).map((value, i) => (
                   <div
-                    key={`${row.category}-${heatmap.months[i]}`}
+                    key={`${row.category}-${safeHeatmap.months[i]}`}
                     className="heat-cell"
                     style={{
                       background: `rgba(200,169,110,${0.12 + value.intensity * 0.62})`,

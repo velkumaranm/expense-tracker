@@ -43,7 +43,38 @@ export default function LoginPage({
   const [sentLinkEmail, setSentLinkEmail] = useState("");
   const [rememberedEmails, setRememberedEmails] = useState(() => readRememberedEmails());
   const [showSavedEmails, setShowSavedEmails] = useState(false);
-  const getError = (e, fallback) => e?.message?.replace("Firebase: ", "") || fallback;
+  const getError = (e, fallback) => {
+    const code = String(e?.code || "");
+    if (code === "auth/unauthorized-domain") {
+      return t(
+        "login.googleDomainError",
+        "Google sign-in is not enabled for this app address. Add this domain in Firebase Authentication > Settings > Authorized domains, then try again."
+      );
+    }
+    if (code === "auth/popup-blocked") {
+      return t("login.googlePopupBlocked", "The browser blocked the Google sign-in popup. Allow popups or use the magic link.");
+    }
+    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+      return t("login.googlePopupClosed", "Google sign-in was closed before it finished.");
+    }
+    if (code === "auth/network-request-failed") {
+      return t("login.networkFailed", "Network error. Check your connection and try again.");
+    }
+    return e?.message?.replace("Firebase: ", "") || fallback;
+  };
+
+  const handleGoogle = async () => {
+    setErr("");
+    setOk("");
+    setLoading(true);
+    try {
+      await onGoogle();
+    } catch (e) {
+      setErr(getError(e, t("login.googleFailed", "Google sign-in failed.")));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEmail = async () => {
     if (!email || !password) return;
@@ -151,7 +182,9 @@ export default function LoginPage({
             <p>{t("login.quickBody", "Use Google, a magic link in your inbox, or email and password when you want the fastest path back in.")}</p>
           </div>
           <div className="login-quick-actions">
-            <button className="google-btn login-quick-btn" onClick={onGoogle}>{t("login.google", "Continue with Google")}</button>
+            <button className="google-btn login-quick-btn" onClick={handleGoogle} disabled={loading}>
+              {loading ? t("common.pleaseWait", "Please wait...") : t("login.google", "Continue with Google")}
+            </button>
           </div>
           {!passkeySupported ? (
             <div className="login-passkey-note">

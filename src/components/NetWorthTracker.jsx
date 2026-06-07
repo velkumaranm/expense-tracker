@@ -17,27 +17,36 @@ const LIABILITY_TEMPLATES = [
 ];
 
 export default function NetWorthTracker({
-  assets,
-  setAssets,
-  liabilities,
-  setLiabilities,
-  holdings,
-  setHoldings,
-  snapshots,
-  setSnapshots,
-  marketProviders,
-  marketDisplayCurrency,
-  setMarketDisplayCurrency,
-  marketFx,
-  portfolioInvestedValue,
-  portfolioGainLoss,
-  investmentTransactions,
-  showToast,
-  trackedCash,
-  trackedInvestments,
-  netWorth,
+  assets = [],
+  setAssets = () => {},
+  onDeleteAsset = null,
+  liabilities = [],
+  setLiabilities = () => {},
+  onDeleteLiability = null,
+  holdings = [],
+  setHoldings = () => {},
+  onDeleteHolding = null,
+  snapshots = [],
+  setSnapshots = () => {},
+  marketProviders = {},
+  marketDisplayCurrency = "INR",
+  setMarketDisplayCurrency = () => {},
+  marketFx = {},
+  portfolioInvestedValue = 0,
+  portfolioGainLoss = 0,
+  investmentTransactions = [],
+  showToast = () => {},
+  trackedCash = 0,
+  trackedInvestments = 0,
+  netWorth = 0,
 }) {
   const { t, language } = useI18n();
+  assets = Array.isArray(assets) ? assets : [];
+  liabilities = Array.isArray(liabilities) ? liabilities : [];
+  holdings = Array.isArray(holdings) ? holdings : [];
+  snapshots = Array.isArray(snapshots) ? snapshots : [];
+  investmentTransactions = Array.isArray(investmentTransactions) ? investmentTransactions : [];
+  marketFx = marketFx || {};
   const [assetForm, setAssetForm] = useState({ name: "", type: "Cash", value: "" });
   const [liabilityForm, setLiabilityForm] = useState({ name: "", type: "Loan", value: "" });
   const holdingCurrency = useCallback(
@@ -58,8 +67,20 @@ export default function NetWorthTracker({
     setLiabilityForm({ name: "", type: "Loan", value: "" });
   };
 
-  const removeAsset = (id) => setAssets((prev) => prev.filter((item) => item.id !== id));
-  const removeLiability = (id) => setLiabilities((prev) => prev.filter((item) => item.id !== id));
+  const removeAsset = (id) => {
+    if (onDeleteAsset) {
+      onDeleteAsset(id);
+      return;
+    }
+    setAssets((prev) => prev.filter((item) => item.id !== id));
+  };
+  const removeLiability = (id) => {
+    if (onDeleteLiability) {
+      onDeleteLiability(id);
+      return;
+    }
+    setLiabilities((prev) => prev.filter((item) => item.id !== id));
+  };
 
   const assetTotal = assets.reduce((s, x) => s + Number(x.value || 0), 0);
   const liabilityTotal = liabilities.reduce((s, x) => s + Number(x.value || 0), 0);
@@ -288,6 +309,7 @@ export default function NetWorthTracker({
       <PortfolioHoldings
         holdings={holdings}
         setHoldings={setHoldings}
+        onDeleteHolding={onDeleteHolding}
         snapshots={snapshots}
         setSnapshots={setSnapshots}
         marketProviders={marketProviders}

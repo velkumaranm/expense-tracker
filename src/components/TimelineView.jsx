@@ -14,13 +14,18 @@ function monthKey(date) {
 }
 
 export default function TimelineView({
-  recurringBills,
-  goals,
-  vaultDocs,
-  holdings,
-  plannerSummary,
+  recurringBills = [],
+  goals = [],
+  vaultDocs = [],
+  holdings = [],
+  plannerSummary = {},
 }) {
   const { t, language } = useI18n();
+  recurringBills = Array.isArray(recurringBills) ? recurringBills : [];
+  goals = Array.isArray(goals) ? goals : [];
+  vaultDocs = Array.isArray(vaultDocs) ? vaultDocs : [];
+  holdings = Array.isArray(holdings) ? holdings : [];
+  plannerSummary = plannerSummary || {};
   const now = new Date();
   const end = addMonths(now, 5);
   const months = [];

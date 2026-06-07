@@ -3,21 +3,42 @@ import { fmtINR } from "../lib/utils";
 import { getCategoryLabel, localizeKnownText, useI18n } from "../lib/i18n";
 
 export default function AIInsights({
-  report,
-  aiState,
-  onGenerate,
-  aiConfig,
-  backendHealth,
-  isAdmin,
-  topCategories,
-  unusualTransactions,
-  totals,
-  chatMessages,
-  onAskQuestion,
-  onClearChat,
-  askLoading,
+  report = null,
+  aiState = {},
+  onGenerate = () => {},
+  aiConfig = { provider: "openrouter" },
+  backendHealth = {},
+  isAdmin = false,
+  topCategories = [],
+  unusualTransactions = [],
+  totals = { income: 0, expense: 0, investment: 0, insurance: 0, balance: 0, savingsRate: 0 },
+  chatMessages = [],
+  onAskQuestion = async () => {},
+  onClearChat = () => {},
+  askLoading = false,
 }) {
   const { t, language } = useI18n();
+  aiState = aiState || {};
+  aiConfig = aiConfig || { provider: "openrouter" };
+  backendHealth = backendHealth || {};
+  const safeTopCategories = Array.isArray(topCategories) ? topCategories : [];
+  const safeUnusualTransactions = Array.isArray(unusualTransactions) ? unusualTransactions : [];
+  const safeChatMessages = Array.isArray(chatMessages) ? chatMessages : [];
+  const safeTotals = { income: 0, expense: 0, investment: 0, insurance: 0, balance: 0, savingsRate: 0, ...(totals || {}) };
+  const safeReport = report ? {
+    headline: "",
+    summary: [],
+    tips: [],
+    opportunities: [],
+    investmentIdeas: [],
+    anomalies: [],
+    ...report,
+    summary: Array.isArray(report.summary) ? report.summary : [],
+    tips: Array.isArray(report.tips) ? report.tips : [],
+    opportunities: Array.isArray(report.opportunities) ? report.opportunities : [],
+    investmentIdeas: Array.isArray(report.investmentIdeas) ? report.investmentIdeas : [],
+    anomalies: Array.isArray(report.anomalies) ? report.anomalies : [],
+  } : null;
   const [question, setQuestion] = useState("");
   const externalAIReady = isAdmin
     ? backendHealth?.providers?.[aiConfig.provider]
@@ -30,31 +51,31 @@ export default function AIInsights({
         : "OpenRouter Proxy"
     : "On-device";
   const suggestedPrompts = [
-    topCategories[0] ? `${t("ai.promptReducePrefix", "How do I reduce spending in")} ${getCategoryLabel(language, topCategories[0].name, topCategories[0].name)} ${t("ai.promptReduceSuffix", "without being too aggressive?")}` : "",
-    unusualTransactions.length ? t("ai.promptReviewAnomalies", "Review the unusual transactions and tell me which one matters most.") : "",
-    totals.income > 0 ? t("ai.promptAllocation", "Based on my current income, how much should go to spending, investing, and emergency reserves?") : "",
+    safeTopCategories[0] ? `${t("ai.promptReducePrefix", "How do I reduce spending in")} ${getCategoryLabel(language, safeTopCategories[0].name, safeTopCategories[0].name)} ${t("ai.promptReduceSuffix", "without being too aggressive?")}` : "",
+    safeUnusualTransactions.length ? t("ai.promptReviewAnomalies", "Review the unusual transactions and tell me which one matters most.") : "",
+    safeTotals.income > 0 ? t("ai.promptAllocation", "Based on my current income, how much should go to spending, investing, and emergency reserves?") : "",
     t("ai.promptNextActions", "What are the next three actions that would improve my finances this month?"),
   ].filter(Boolean);
-  const takeawaySections = report ? [
+  const takeawaySections = safeReport ? [
     {
       title: t("ai.overview", "Overview"),
-      items: [report.headline, ...(report.summary || [])],
+      items: [safeReport.headline, ...safeReport.summary],
     },
     {
       title: t("ai.nextMoves", "Next Best Moves"),
-      items: report.tips || [],
+      items: safeReport.tips,
     },
     {
       title: t("ai.savingsOpp", "Savings Opportunities"),
-      items: report.opportunities || [],
+      items: safeReport.opportunities,
     },
     {
       title: t("ai.investGuidance", "Investment Guidance"),
-      items: report.investmentIdeas || [],
+      items: safeReport.investmentIdeas,
     },
     {
       title: t("ai.anomalyWatch", "Anomaly Watch"),
-      items: report.anomalies?.length ? report.anomalies : [t("ai.noAnomalies", "No unusual transactions were flagged in the current scan.")],
+      items: safeReport.anomalies.length ? safeReport.anomalies : [t("ai.noAnomalies", "No unusual transactions were flagged in the current scan.")],
     },
   ]
     .map((section) => ({
@@ -71,7 +92,7 @@ export default function AIInsights({
           <p>{t("ai.subtitle", "Personalized financial intelligence powered by your transaction graph.")}</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {!!chatMessages.length && <button className="icon-btn" onClick={onClearChat}>{t("ai.clear", "Clear Chat")}</button>}
+          {!!safeChatMessages.length && <button className="icon-btn" onClick={onClearChat}>{t("ai.clear", "Clear Chat")}</button>}
           <button className="btn-primary" onClick={onGenerate} disabled={aiState.loading}>
             {aiState.loading ? t("ai.analyzing", "Analyzing...") : t("ai.refresh", "Refresh Insights")}
           </button>
@@ -81,13 +102,13 @@ export default function AIInsights({
       <div className="summary-grid">
         <div className="summary-card summary-span-6">
           <div className="sc-label">{t("ai.topSpendBucket", "Top Spend Bucket")}</div>
-          <div className="sc-value" style={{ color: "var(--expense)" }}>{topCategories[0] ? fmtINR(topCategories[0].value) : "—"}</div>
-          <div className="sc-sub">{topCategories[0] ? getCategoryLabel(language, topCategories[0].name, topCategories[0].name) : t("ai.topSpendEmpty", "No expense data yet")}</div>
+          <div className="sc-value" style={{ color: "var(--expense)" }}>{safeTopCategories[0] ? fmtINR(safeTopCategories[0].value) : "—"}</div>
+          <div className="sc-sub">{safeTopCategories[0] ? getCategoryLabel(language, safeTopCategories[0].name, safeTopCategories[0].name) : t("ai.topSpendEmpty", "No expense data yet")}</div>
         </div>
         <div className="summary-card summary-span-6">
           <div className="sc-label">{t("dashboard.savingsRateLabel", "Savings Rate")}</div>
-          <div className="sc-value" style={{ color: totals.savingsRate >= 20 ? "var(--income)" : "var(--accent)" }}>
-            {totals.income > 0 ? `${totals.savingsRate.toFixed(1)}%` : "—"}
+          <div className="sc-value" style={{ color: safeTotals.savingsRate >= 20 ? "var(--income)" : "var(--accent)" }}>
+            {safeTotals.income > 0 ? `${safeTotals.savingsRate.toFixed(1)}%` : "—"}
           </div>
           <div className="sc-sub">{t("ai.savingsRateCardSub", "Used for savings, investment, and risk recommendations.")}</div>
         </div>
@@ -95,7 +116,7 @@ export default function AIInsights({
 
       {aiState.error && <div className="alert-item warn" style={{ marginBottom: 12 }}><strong>{t("ai.requestIssue", "AI request issue")}</strong><p>{aiState.error}</p></div>}
 
-      {report ? (
+      {safeReport ? (
         <div className="ai-layout">
           {!!takeawaySections.length && (
             <div className="section-card ai-takeaways-card">
@@ -132,8 +153,8 @@ export default function AIInsights({
                   </div>
                 </div>
                 <div className="ai-chat-body">
-                  {chatMessages.length ? (
-                    chatMessages.map((msg) => (
+                  {safeChatMessages.length ? (
+                    safeChatMessages.map((msg) => (
                       <div key={msg.id} className={`ai-message ${msg.role === "user" ? "user" : "assistant"}`}>
                         <div className="ai-message-meta">
                           <strong>{msg.role === "user" ? t("ai.you", "You") : "Finwise AI"}</strong>
@@ -189,15 +210,15 @@ export default function AIInsights({
               <div className="section-card ai-context-card">
                 <h3>{t("ai.quickContext", "Quick Context")}</h3>
                 <div className="stack">
-                  {report.summary.map((line) => <div key={line} className="stat-line"><span>{localizeKnownText(language, line)}</span></div>)}
+                  {safeReport.summary.map((line) => <div key={line} className="stat-line"><span>{localizeKnownText(language, line)}</span></div>)}
                 </div>
               </div>
 
               <div className="section-card ai-overview-card">
                 <h3>{t("ai.overview", "Overview")}</h3>
-                <p style={{ marginBottom: 12 }}>{localizeKnownText(language, report.headline)}</p>
+                <p style={{ marginBottom: 12 }}>{localizeKnownText(language, safeReport.headline)}</p>
                 <div className="stack">
-                  {report.summary.map((line) => <div key={line} className="stat-line"><span>{localizeKnownText(language, line)}</span></div>)}
+                  {safeReport.summary.map((line) => <div key={line} className="stat-line"><span>{localizeKnownText(language, line)}</span></div>)}
                 </div>
               </div>
 
@@ -208,7 +229,7 @@ export default function AIInsights({
             <div className="section-card ai-insight-card">
               <h3>{t("ai.nextMoves", "Next Best Moves")}</h3>
               <div className="insight-list">
-                {report.tips.map((item) => (
+                {safeReport.tips.map((item) => (
                   <div key={item} className="insight-item">
                     <strong>{t("ai.action", "Action")}</strong>
                     <p>{localizeKnownText(language, item)}</p>
@@ -220,7 +241,7 @@ export default function AIInsights({
             <div className="section-card ai-insight-card">
               <h3>{t("ai.savingsOpp", "Savings Opportunities")}</h3>
               <div className="insight-list">
-                {report.opportunities.map((item) => (
+                {safeReport.opportunities.map((item) => (
                   <div key={item} className="insight-item">
                     <strong>{t("ai.opportunity", "Opportunity")}</strong>
                     <p>{localizeKnownText(language, item)}</p>
@@ -232,7 +253,7 @@ export default function AIInsights({
             <div className="section-card ai-insight-card">
               <h3>{t("ai.investGuidance", "Investment Guidance")}</h3>
               <div className="insight-list">
-                {report.investmentIdeas.map((item) => (
+                {safeReport.investmentIdeas.map((item) => (
                   <div key={item} className="insight-item">
                     <strong>{t("ai.portfolioNudge", "Portfolio Nudge")}</strong>
                     <p>{localizeKnownText(language, item)}</p>
@@ -243,9 +264,9 @@ export default function AIInsights({
 
             <div className="section-card ai-insight-card">
               <h3>{t("ai.anomalyWatch", "Anomaly Watch")}</h3>
-              {report.anomalies.length ? (
+              {safeReport.anomalies.length ? (
                 <div className="insight-list">
-                  {report.anomalies.map((item) => (
+                  {safeReport.anomalies.map((item) => (
                     <div key={item} className="alert-item warn">
                       <strong>{t("ai.unusualSpendLabel", "Unusual Spend")}</strong>
                       <p>{localizeKnownText(language, item)}</p>
@@ -257,11 +278,11 @@ export default function AIInsights({
               )}
             </div>
 
-            {unusualTransactions.length > 0 && (
+            {safeUnusualTransactions.length > 0 && (
               <div className="section-card ai-insight-card">
                 <h3>{t("ai.flaggedTx", "Flagged Transactions")}</h3>
                 <div className="stack">
-                  {unusualTransactions.map((tx) => (
+                  {safeUnusualTransactions.map((tx) => (
                     <div key={tx.id} className="table-row">
                       <div className="split-row">
                         <strong>{getCategoryLabel(language, tx.category, tx.category)}</strong>

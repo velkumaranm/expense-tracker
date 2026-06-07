@@ -51,6 +51,14 @@ const getJson = async (url) => {
   return data;
 };
 
+const countCollection = async (uid, collectionName) => {
+  const data = await getJson(
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}/${collectionName}?pageSize=300`
+  );
+  if (data?.error) return `error:${data.error}`;
+  return data?.documents?.length || 0;
+};
+
 for (const email of emails) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) continue;
@@ -78,9 +86,14 @@ for (const email of emails) {
   const holdingsCount = fields?.holdings?.arrayValue?.values?.length || 0;
   const snapshotsCount = fields?.portfolioSnapshots?.arrayValue?.values?.length || 0;
   const vaultCount = fields?.vaultDocs?.arrayValue?.values?.length || 0;
-  console.log(`HOLDINGS=${holdingsCount}`);
-  console.log(`SNAPSHOTS=${snapshotsCount}`);
-  console.log(`VAULT_DOCS=${vaultCount}`);
+  console.log(`APPSTATE_HOLDINGS=${holdingsCount}`);
+  console.log(`APPSTATE_SNAPSHOTS=${snapshotsCount}`);
+  console.log(`APPSTATE_VAULT_DOCS=${vaultCount}`);
+  console.log(`COLLECTION_EXPENSES=${await countCollection(user.localId, "expenses")}`);
+  console.log(`COLLECTION_GOALS=${await countCollection(user.localId, "goals")}`);
+  console.log(`COLLECTION_HOLDINGS=${await countCollection(user.localId, "holdings")}`);
+  console.log(`COLLECTION_SNAPSHOTS=${await countCollection(user.localId, "portfolioSnapshots")}`);
+  console.log(`COLLECTION_VAULT_DOCS=${await countCollection(user.localId, "vaultDocs")}`);
   console.log(`UPDATED=${doc.updateTime || "unknown"}`);
   console.log("---");
 }

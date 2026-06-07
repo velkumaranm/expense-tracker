@@ -2,31 +2,33 @@ import { useState } from "react";
 import { SUPPORTED_LANGUAGES, useI18n } from "../lib/i18n";
 
 export default function Settings({
-  budget,
-  budgetInput,
-  setBudgetInput,
-  onSaveBudget,
-  darkMode,
-  setDarkMode,
-  user,
-  logout,
-  aiConfig,
-  setAiConfig,
-  notificationsEnabled,
-  setNotificationsEnabled,
-  backendHealth,
-  isAdmin,
-  userRole,
-  onSendVerificationEmail,
-  onSendPasswordReset,
-  onChangeEmail,
-  language,
-  setLanguage,
-  pwaInstalled,
-  pwaInstallReady,
-  onInstallApp,
+  budget = 0,
+  budgetInput = "",
+  setBudgetInput = () => {},
+  onSaveBudget = () => {},
+  darkMode = false,
+  setDarkMode = () => {},
+  user = null,
+  logout = () => {},
+  aiConfig = {},
+  setAiConfig = () => {},
+  notificationsEnabled = false,
+  setNotificationsEnabled = () => {},
+  backendHealth = {},
+  isAdmin = false,
+  userRole = "user",
+  onSendVerificationEmail = async () => {},
+  onSendPasswordReset = async () => {},
+  onChangeEmail = async () => {},
+  language = "en",
+  setLanguage = () => {},
+  pwaInstalled = false,
+  pwaInstallReady = false,
+  onInstallApp = () => {},
 }) {
   const { t } = useI18n();
+  aiConfig = aiConfig || {};
+  backendHealth = backendHealth || {};
   const [nextEmail, setNextEmail] = useState(user?.email || "");
   const [accountState, setAccountState] = useState({ loading: "", error: "", ok: "" });
   const isLocalInstallHost =

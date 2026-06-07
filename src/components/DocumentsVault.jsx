@@ -68,8 +68,9 @@ function fmtSize(bytes) {
   return `${value} B`;
 }
 
-export default function DocumentsVault({ docs, setDocs, showToast, user }) {
+export default function DocumentsVault({ docs = [], setDocs = () => {}, onDeleteDoc = null, showToast = () => {}, user = null }) {
   const { t } = useI18n();
+  docs = Array.isArray(docs) ? docs : [];
   const [form, setForm] = useState(emptyDoc);
   const [editingId, setEditingId] = useState("");
   const [attachmentMap, setAttachmentMap] = useState({});
@@ -204,7 +205,11 @@ export default function DocumentsVault({ docs, setDocs, showToast, user }) {
 
   const removeDoc = async (id) => {
     await purgeVaultAttachments(id).catch(() => {});
-    setDocs((prev) => prev.filter((item) => item.id !== id));
+    if (onDeleteDoc) {
+      await onDeleteDoc(id);
+    } else {
+      setDocs((prev) => prev.filter((item) => item.id !== id));
+    }
     setAttachmentMap((prev) => {
       const next = { ...prev };
       delete next[id];

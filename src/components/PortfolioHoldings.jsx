@@ -247,16 +247,20 @@ function displayAmountBoth(amount, fromCurrency, fx) {
 }
 
 export default function PortfolioHoldings({
-  holdings,
-  setHoldings,
-  snapshots,
-  setSnapshots,
-  marketDisplayCurrency,
-  setMarketDisplayCurrency,
-  marketFx,
-  showToast,
+  holdings = [],
+  setHoldings = () => {},
+  onDeleteHolding = null,
+  snapshots = [],
+  setSnapshots = () => {},
+  marketDisplayCurrency = "INR",
+  setMarketDisplayCurrency = () => {},
+  marketFx = {},
+  showToast = () => {},
 }) {
   const { t } = useI18n();
+  holdings = Array.isArray(holdings) ? holdings : [];
+  snapshots = Array.isArray(snapshots) ? snapshots : [];
+  marketFx = marketFx || {};
   const [form, setForm] = useState(emptyForm);
   const [searchState, setSearchState] = useState({ query: "", loading: false, error: "", results: [] });
   const [refreshing, setRefreshing] = useState(false);
@@ -321,13 +325,6 @@ export default function PortfolioHoldings({
     () => [...snapshots].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5),
     [snapshots]
   );
-
-  useEffect(() => {
-    setSnapshots((prev) => {
-      const filtered = (prev || []).filter((item) => item.signature && item.signature === holdingsSignature);
-      return filtered.length === prev.length ? prev : filtered;
-    });
-  }, [holdingsSignature, setSnapshots]);
 
   const formatHoldingAmount = (amount, item) => {
     const sourceCurrency = holdingCurrency(item);
@@ -456,7 +453,6 @@ export default function PortfolioHoldings({
             : item
         )
       );
-      setSnapshots([]);
       showToast(t("market.updatedToast", "Holding updated. Refresh once if you want a fresh market quote."));
     } else {
       setHoldings((prev) => [
@@ -475,7 +471,6 @@ export default function PortfolioHoldings({
         },
         ...prev,
       ]);
-      setSnapshots([]);
       showToast(t("market.addedToast", "Holding added. Refresh once to fetch the latest price."));
     }
 
@@ -485,9 +480,12 @@ export default function PortfolioHoldings({
   };
 
   const removeHolding = (id) => {
-    setHoldings((prev) => prev.filter((item) => item.id !== id));
-    setSnapshots([]);
-    showToast(t("market.removedToast", "Holding removed. Snapshot history cleared so it can rebuild from your current portfolio."), "warning");
+    if (onDeleteHolding) {
+      onDeleteHolding(id);
+    } else {
+      setHoldings((prev) => prev.filter((item) => item.id !== id));
+    }
+    showToast(t("market.removedToast", "Holding removed."), "warning");
   };
 
   const doRefresh = async () => {

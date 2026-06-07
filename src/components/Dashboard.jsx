@@ -17,47 +17,66 @@ import MonthStrip from "./MonthStrip";
 import { AreaTip, PieTip } from "./ChartBits";
 
 export default function Dashboard({
-  months,
-  selectedMonth,
-  setSelectedMonth,
-  totals,
-  budgetNum,
-  budgetProgress,
-  budgetColor,
-  expPieData,
-  invPieData,
-  insPieData,
-  monthlySeries,
-  alerts,
-  topCategories,
-  recurringOutflow,
-  netWorth,
-  unusualTransactions,
-  goals,
-  totalTransactions,
-  assetCount,
-  liabilityCount,
-  onboardingState,
-  setOnboardingState,
-  plannerSummary,
-  subscriptionSummary,
-  vaultSummary,
-  dataConfidence,
-  monthlyReview,
-  smartRuleSuggestions,
-  onApplySmartRules,
-  lastUndo,
-  onUndo,
-  onExportMonthlyReview,
-  onOpenCommand,
-  onLoadDemo,
-  onJumpToAdd,
-  onJumpToImport,
-  onJumpToGoals,
-  onJumpToNetWorth,
-  onJumpToVault,
+  months = [],
+  selectedMonth = "all",
+  setSelectedMonth = () => {},
+  totals = { income: 0, expense: 0, investment: 0, insurance: 0, balance: 0, savingsRate: 0 },
+  budgetNum = 0,
+  budgetProgress = 0,
+  budgetColor = "var(--accent)",
+  expPieData = [],
+  invPieData = [],
+  insPieData = [],
+  monthlySeries = [],
+  alerts = [],
+  topCategories = [],
+  recurringOutflow = 0,
+  netWorth = 0,
+  unusualTransactions = [],
+  goals = [],
+  totalTransactions = 0,
+  assetCount = 0,
+  liabilityCount = 0,
+  onboardingState = {},
+  setOnboardingState = () => {},
+  plannerSummary = {},
+  subscriptionSummary = {},
+  vaultSummary = {},
+  dataConfidence = {},
+  monthlyReview = {},
+  smartRuleSuggestions = [],
+  onApplySmartRules = () => {},
+  onIgnoreSmartRule = () => {},
+  lastUndo = null,
+  onUndo = () => {},
+  onExportMonthlyReview = () => {},
+  onOpenCommand = () => {},
+  onLoadDemo = () => {},
+  onJumpToAdd = () => {},
+  onJumpToImport = () => {},
+  onJumpToGoals = () => {},
+  onJumpToNetWorth = () => {},
+  onJumpToVault = () => {},
+  onJumpToAi = () => {},
 }) {
   const { t, language } = useI18n();
+  months = Array.isArray(months) ? months : [];
+  totals = { income: 0, expense: 0, investment: 0, insurance: 0, balance: 0, savingsRate: 0, ...(totals || {}) };
+  expPieData = Array.isArray(expPieData) ? expPieData : [];
+  invPieData = Array.isArray(invPieData) ? invPieData : [];
+  insPieData = Array.isArray(insPieData) ? insPieData : [];
+  monthlySeries = Array.isArray(monthlySeries) ? monthlySeries : [];
+  alerts = Array.isArray(alerts) ? alerts : [];
+  topCategories = Array.isArray(topCategories) ? topCategories : [];
+  unusualTransactions = Array.isArray(unusualTransactions) ? unusualTransactions : [];
+  goals = Array.isArray(goals) ? goals : [];
+  onboardingState = onboardingState || {};
+  plannerSummary = plannerSummary || {};
+  subscriptionSummary = subscriptionSummary || {};
+  vaultSummary = vaultSummary || {};
+  dataConfidence = dataConfidence || {};
+  monthlyReview = monthlyReview || {};
+  smartRuleSuggestions = Array.isArray(smartRuleSuggestions) ? smartRuleSuggestions : [];
   const balanceTone = totals.balance >= 0 ? "var(--income)" : "var(--expense)";
   const savingsColor = totals.savingsRate >= 20 ? "var(--income)" : totals.savingsRate >= 10 ? "var(--accent)" : "var(--expense)";
   const runwayMonths = totals.expense > 0 ? netWorth / totals.expense : 0;
@@ -111,6 +130,7 @@ export default function Dashboard({
     { label: t("dashboard.goalGapLabel", "Goal Funding Gap"), value: fmtINR(monthlyReview?.goalGap || 0) },
     { label: t("dashboard.portfolioMove", "Portfolio movement"), value: fmtINR(monthlyReview?.portfolioGainLoss || 0) },
   ];
+  const reviewActions = monthlyReview?.actions || [];
 
   return (
     <>
@@ -153,17 +173,36 @@ export default function Dashboard({
             </div>
             <span className="status-pill neutral">{monthlyReview?.actionCount || 0} {t("dashboard.actionsToReview", "actions")}</span>
           </div>
-          <div className="review-chip-grid">
-            {reviewRows.map((row) => (
+          <div className="review-action-list" aria-label={t("dashboard.reviewActions", "Review actions")}>
+            {reviewActions.length ? reviewActions.slice(0, 3).map((action) => {
+              return (
+                <div key={`${action.type}-${action.id}`} className={`review-action-row ${action.tone || "neutral"}`}>
+                  <div className="review-action-copy">
+                    <strong>{action.title}</strong>
+                    <small>{action.body}</small>
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="review-action-empty">{t("dashboard.noReviewActions", "No actions need review right now.")}</div>
+            )}
+          </div>
+          <div className="review-chip-grid compact">
+            {reviewRows.slice(0, 4).map((row) => (
               <div key={row.label} className="mini-stat">
                 <span>{row.label}</span>
                 <strong>{row.value}</strong>
               </div>
             ))}
           </div>
-          <button className="btn-primary control-card-action" onClick={onExportMonthlyReview}>
-            {t("dashboard.exportReview", "Export review")}
-          </button>
+          <div className="control-actions-row">
+            <button className="btn-primary" onClick={onExportMonthlyReview}>
+              {t("dashboard.exportReview", "Export review")}
+            </button>
+            <button className="btn-secondary" onClick={onJumpToAi}>
+              {t("dashboard.askAiAboutReview", "Ask AI")}
+            </button>
+          </div>
         </div>
 
         <div className="section-card premium-control-card">
@@ -177,17 +216,32 @@ export default function Dashboard({
           <div className="smart-rule-list">
             {smartRuleSuggestions?.length ? smartRuleSuggestions.slice(0, 4).map((item) => (
               <div key={item.id} className="smart-rule-row">
-                <span>{item.from || t("dashboard.notAvailable", "Not available")} → {item.to}</span>
-                <small>{fmtINR(item.amount)} · {item.date}</small>
+                <div className="smart-rule-copy">
+                  <span>
+                    {getCategoryLabel(language, item.from, item.from || t("dashboard.notAvailable", "Not available"))}
+                    {" → "}
+                    {getCategoryLabel(language, item.to, item.to)}
+                  </span>
+                  <small>
+                    {fmtINR(item.amount)} · {item.date}
+                    {item.confidence ? ` · ${t("dashboard.confidence", "Confidence")} ${item.confidence}%` : ""}
+                  </small>
+                  {item.reason && <em>{item.reason}</em>}
+                </div>
+                <div className="smart-rule-actions">
+                  <button className="mini-action-btn" onClick={() => onApplySmartRules(item.id)}>
+                    {t("dashboard.applyThisSuggestion", "Apply")}
+                  </button>
+                  <button className="mini-action-btn quiet" onClick={() => onIgnoreSmartRule?.(item.id)}>
+                    {t("dashboard.ignoreSuggestion", "Ignore")}
+                  </button>
+                </div>
               </div>
             )) : (
               <div className="smart-rule-empty">{t("dashboard.noRuleSuggestions", "No rule suggestions right now.")}</div>
             )}
           </div>
           <div className="control-actions-row">
-            <button className="btn-primary" disabled={!smartRuleSuggestions?.length} onClick={onApplySmartRules}>
-              {t("dashboard.applySuggestions", "Apply suggestions")}
-            </button>
             {lastUndo && (
               <button className="btn-secondary" onClick={onUndo}>
                 {t("dashboard.undoLast", "Undo last change")}

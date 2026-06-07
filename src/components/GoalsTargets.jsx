@@ -37,8 +37,37 @@ const monthsUntil = (targetDate) => {
   return Math.max(months + 1, 1);
 };
 
-export default function GoalsTargets({ goals, setGoals, plannerState, setPlannerState, plannerSummary }) {
+export default function GoalsTargets({
+  goals = [],
+  setGoals = () => {},
+  onDeleteGoal = null,
+  plannerState = {},
+  setPlannerState = () => {},
+  plannerSummary = {},
+}) {
   const { t } = useI18n();
+  const safeGoals = Array.isArray(goals) ? goals : [];
+  const safePlannerState = plannerState || {};
+  const safePlannerSummary = {
+    emergencyTarget: 0,
+    emergencyCoverageMonths: 0,
+    emergencyGap: 0,
+    retirementTarget: 0,
+    futureCorpus: 0,
+    projectedRetirementCorpus: 0,
+    retirementGap: 0,
+    yearsToRetirement: 0,
+    suggestedEmi: 0,
+    currentEmi: 0,
+    emiStress: 0,
+    emiLoadPct: 0,
+    insuranceTarget: 0,
+    insuranceGap: 0,
+    ...(plannerSummary || {}),
+  };
+  goals = safeGoals;
+  plannerState = safePlannerState;
+  plannerSummary = safePlannerSummary;
   const [form, setForm] = useState({
     name: "",
     category: "Emergency Fund",
@@ -69,17 +98,23 @@ export default function GoalsTargets({ goals, setGoals, plannerState, setPlanner
   const updateGoal = (id, patch) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)));
 
-  const removeGoal = (id) => setGoals((prev) => prev.filter((g) => g.id !== id));
+  const removeGoal = (id) => {
+    if (onDeleteGoal) {
+      onDeleteGoal(id);
+      return;
+    }
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+  };
 
   const metrics = useMemo(() => {
-    const targetTotal = goals.reduce((sum, goal) => sum + Number(goal.targetAmount || 0), 0);
-    const fundedTotal = goals.reduce((sum, goal) => sum + Number(goal.currentAmount || 0), 0);
-    const monthlyRequired = goals.reduce((sum, goal) => {
+    const targetTotal = safeGoals.reduce((sum, goal) => sum + Number(goal.targetAmount || 0), 0);
+    const fundedTotal = safeGoals.reduce((sum, goal) => sum + Number(goal.currentAmount || 0), 0);
+    const monthlyRequired = safeGoals.reduce((sum, goal) => {
       const remaining = Math.max(Number(goal.targetAmount || 0) - Number(goal.currentAmount || 0), 0);
       const monthsLeft = monthsUntil(goal.targetDate);
       return sum + (monthsLeft ? remaining / monthsLeft : 0);
     }, 0);
-    const onTrack = goals.filter((goal) => {
+    const onTrack = safeGoals.filter((goal) => {
       const remaining = Math.max(Number(goal.targetAmount || 0) - Number(goal.currentAmount || 0), 0);
       const monthsLeft = monthsUntil(goal.targetDate);
       if (!monthsLeft || remaining <= 0) return Number(goal.currentAmount || 0) >= Number(goal.targetAmount || 0);
@@ -93,12 +128,12 @@ export default function GoalsTargets({ goals, setGoals, plannerState, setPlanner
       onTrack,
       fundedPct: targetTotal ? (fundedTotal / targetTotal) * 100 : 0,
     };
-  }, [goals]);
+  }, [safeGoals]);
 
-  const annualExpenseBaseline = Number(plannerState.monthlyHouseholdExpense || 0) * 12;
-  const currentInvestable = Number(plannerState.currentInvestableAssets || 0);
-  const monthlyGoalContribution = Number(plannerState.monthlyGoalContribution || 0);
-  const fireTarget = annualExpenseBaseline > 0 ? annualExpenseBaseline * Number(plannerState.fireMultiple || 25) : 0;
+  const annualExpenseBaseline = Number(safePlannerState.monthlyHouseholdExpense || 0) * 12;
+  const currentInvestable = Number(safePlannerState.currentInvestableAssets || 0);
+  const monthlyGoalContribution = Number(safePlannerState.monthlyGoalContribution || 0);
+  const fireTarget = annualExpenseBaseline > 0 ? annualExpenseBaseline * Number(safePlannerState.fireMultiple || 25) : 0;
   const annualContribution = monthlyGoalContribution * 12;
   const fireYears = fireTarget > currentInvestable && annualContribution > 0
     ? Math.max((fireTarget - currentInvestable) / annualContribution, 0)
@@ -106,16 +141,16 @@ export default function GoalsTargets({ goals, setGoals, plannerState, setPlanner
       ? 0
       : null;
   const insuranceTarget = insuranceCoverageTarget({
-    annualIncome: Number(plannerState.annualIncome || 0),
-    liabilities: Number(plannerState.totalLiabilities || 0),
-    dependents: Number(plannerState.dependents || 0),
-    liquidAssets: Number(plannerState.currentEmergencyFund || 0),
-    multiplier: Number(plannerState.coverMultiplier || 12),
+    annualIncome: Number(safePlannerState.annualIncome || 0),
+    liabilities: Number(safePlannerState.totalLiabilities || 0),
+    dependents: Number(safePlannerState.dependents || 0),
+    liquidAssets: Number(safePlannerState.currentEmergencyFund || 0),
+    multiplier: Number(safePlannerState.coverMultiplier || 12),
   });
-  const currentInsuranceCover = Number(plannerState.currentInsuranceCover || 0);
+  const currentInsuranceCover = Number(safePlannerState.currentInsuranceCover || 0);
   const insuranceGap = Math.max(insuranceTarget - currentInsuranceCover, 0);
-  const allocation = allocationRule(plannerState.primaryAllocationMode || "balanced");
-  const monthlyIncome = Number(plannerState.annualIncome || 0) > 0 ? Number(plannerState.annualIncome) / 12 : 0;
+  const allocation = allocationRule(safePlannerState.primaryAllocationMode || "balanced");
+  const monthlyIncome = Number(safePlannerState.annualIncome || 0) > 0 ? Number(safePlannerState.annualIncome) / 12 : 0;
   const goalTypeLabel = (value) => t(GOAL_TYPE_KEYS[value] || "goals.goalType", value);
   const goalTemplateLabel = (value) => t(GOAL_TEMPLATE_KEYS[value] || "goals.goalName", value);
 

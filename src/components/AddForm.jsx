@@ -3,25 +3,27 @@ import { categoriesForType, defaultCategoryForType } from "../lib/utils";
 import { getCategoryLabel, getTypeLabel, useI18n } from "../lib/i18n";
 
 export default function AddForm({
-  amount,
-  setAmount,
-  type,
-  setType,
+  amount = "",
+  setAmount = () => {},
+  type = "expense",
+  setType = () => {},
   category,
-  setCategory,
-  note,
-  setNote,
-  date,
-  setDate,
-  editId,
-  onSubmit,
-  onCancel,
-  recurring,
-  setRecurring,
-  recurringFrequency,
-  setRecurringFrequency,
+  setCategory = () => {},
+  note = "",
+  setNote = () => {},
+  date = "",
+  setDate = () => {},
+  editId = null,
+  onSubmit = () => {},
+  onCancel = () => {},
+  recurring = false,
+  setRecurring = () => {},
+  recurringFrequency = "monthly",
+  setRecurringFrequency = () => {},
 }) {
   const { t, language } = useI18n();
+  const safeType = VALID_TYPES.includes(type) ? type : "expense";
+  const safeCategory = category || defaultCategoryForType(safeType);
   const changeType = (nextType) => {
     setType(nextType);
     setCategory(defaultCategoryForType(nextType));
@@ -41,7 +43,7 @@ export default function AddForm({
             <label className="fl">{t("add.type", "Type")}</label>
             <div className="type-toggle">
               {VALID_TYPES.map((item) => (
-                <button key={item} className={`type-btn ${type === item ? `active ${item}` : ""}`} onClick={() => changeType(item)}>
+                <button key={item} className={`type-btn ${safeType === item ? `active ${item}` : ""}`} onClick={() => changeType(item)}>
                   {TYPE_META[item].icon} {getTypeLabel(language, item, TYPE_META[item].label)}
                 </button>
               ))}
@@ -53,8 +55,8 @@ export default function AddForm({
           </div>
           <div className="fg">
             <label className="fl">{t("add.category", "Category")}</label>
-            <select className="fs" value={category} onChange={(e) => setCategory(e.target.value)}>
-              {categoriesForType(type).map((c) => <option key={c} value={c}>{CATEGORY_ICONS[c] || "•"} {getCategoryLabel(language, c)}</option>)}
+            <select className="fs" value={safeCategory} onChange={(e) => setCategory(e.target.value)}>
+              {categoriesForType(safeType).map((c) => <option key={c} value={c}>{CATEGORY_ICONS[c] || "•"} {getCategoryLabel(language, c)}</option>)}
             </select>
           </div>
           <div className="fg">

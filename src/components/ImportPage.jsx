@@ -4,7 +4,7 @@ import { autoMapColumns, normalizeDate, parseCSV, toLocalDateStr, fmtINR } from 
 import { TYPE_META } from "../lib/constants";
 import { getCategoryLabel, getTypeLabel, useI18n } from "../lib/i18n";
 
-export default function ImportPage({ onImport, showToast }) {
+export default function ImportPage({ onImport = async () => {}, showToast = () => {} }) {
   const { t, language } = useI18n();
   const [step, setStep] = useState("upload");
   const [csvData, setCsvData] = useState(null);
@@ -33,6 +33,7 @@ export default function ImportPage({ onImport, showToast }) {
   };
 
   const buildPreview = () => {
+    if (!csvData || !Array.isArray(csvData.rows)) return;
     const result = [];
     const errs = [];
     csvData.rows.forEach((row, i) => {
@@ -67,6 +68,12 @@ export default function ImportPage({ onImport, showToast }) {
   const runImport = async () => {
     setStep("importing");
     const valid = parsed.filter((r) => r.valid);
+    if (!valid.length) {
+      setProgress(100);
+      setStep("done");
+      showToast(t("import.noValidRows", "No valid rows to import."), "error");
+      return;
+    }
     let done = 0;
     for (const rec of valid) {
       await onImport(rec);
