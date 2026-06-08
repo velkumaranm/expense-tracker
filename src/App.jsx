@@ -900,7 +900,11 @@ export default function App() {
     if (!user || !holdingsReadyRef.current) return;
     localStorage.setItem(getStorageKey(user.uid, "holdings"), JSON.stringify(holdings));
     if (Array.isArray(holdings) && holdings.length) {
-      localStorage.setItem(getStorageKey(user.uid, "holdings-backup"), JSON.stringify(holdings));
+      const backupKey = getStorageKey(user.uid, "holdings-backup");
+      const previousBackup = safeJSON(localStorage.getItem(backupKey), []);
+      if (!Array.isArray(previousBackup) || holdings.length >= previousBackup.length) {
+        localStorage.setItem(backupKey, JSON.stringify(holdings));
+      }
     }
   }, [holdings, user]);
   useEffect(() => {

@@ -160,20 +160,27 @@ function isIndianHolding(item) {
   const symbol = String(item?.quoteSymbol || item?.symbol || "").toUpperCase();
   const account = String(item?.account || "").toLowerCase();
   const source = String(item?.source || "").toLowerCase();
-  return (
-    item?.kind === "mutualFund" ||
+  const hasIndianSymbol =
     symbol.includes(".NS") ||
     symbol.includes(".BO") ||
     symbol.includes(".NSE") ||
     symbol.includes(".BSE") ||
     symbol.includes(":NSE") ||
-    symbol.includes(":BSE") ||
+    symbol.includes(":BSE");
+  const hasIndianSource = source.includes("nse-official-eod") || source.includes("mfapi");
+  const hasGlobalSource =
+    source.includes("twelve-data") ||
+    source.includes("finnhub") ||
+    source.includes("alpha-vantage") ||
+    source.includes("alpaca") ||
+    source.includes("yahoo-finance");
+  if (item?.kind === "mutualFund" || hasIndianSymbol || hasIndianSource) return true;
+  if (hasGlobalSource || item?.kind === "crypto" || item?.kind === "commodity") return false;
+  return (
     account.includes("zerodha") ||
     account.includes("groww") ||
     account.includes("upstox") ||
-    account.includes("angel") ||
-    source.includes("nse-official-eod") ||
-    source.includes("mfapi")
+    account.includes("angel")
   );
 }
 
@@ -226,8 +233,7 @@ function defaultCurrencyForDraft(form) {
     account.includes("zerodha") ||
     account.includes("groww") ||
     account.includes("upstox") ||
-    account.includes("angel") ||
-    account.includes("indmoney");
+    account.includes("angel");
   return looksIndian ? "INR" : "USD";
 }
 

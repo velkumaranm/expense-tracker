@@ -56,20 +56,29 @@ function unique(values = []) {
 function likelyIndianHolding(item) {
   const symbol = String(item?.quoteSymbol || item?.symbol || "").toUpperCase();
   const account = String(item?.account || "").toLowerCase();
+  const source = String(item?.source || "").toLowerCase();
+  const explicitIndianSymbol =
+    symbol.includes(".NS") ||
+    symbol.includes(".BO") ||
+    symbol.includes(".NSE") ||
+    symbol.includes(".BSE") ||
+    symbol.includes(":NSE") ||
+    symbol.includes(":BSE");
+  const globalSource =
+    source.includes("twelve-data") ||
+    source.includes("finnhub") ||
+    source.includes("alpha-vantage") ||
+    source.includes("alpaca") ||
+    source.includes("yahoo-finance");
+  if (explicitIndianSymbol) return item?.kind === "stock";
+  if (globalSource || String(item?.currency || "").toUpperCase() === "USD") return false;
   return (
     item?.kind === "stock" &&
     (
-      symbol.includes(".NS") ||
-      symbol.includes(".BO") ||
-      symbol.includes(".NSE") ||
-      symbol.includes(".BSE") ||
-      symbol.includes(":NSE") ||
-      symbol.includes(":BSE") ||
       account.includes("zerodha") ||
       account.includes("groww") ||
       account.includes("upstox") ||
-      account.includes("angel") ||
-      account.includes("indmoney")
+      account.includes("angel")
     )
   );
 }

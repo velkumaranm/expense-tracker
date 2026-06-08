@@ -64,6 +64,22 @@ const CRYPTO_ID_ALIASES = {
   AVAX: "avalanche-2",
   LINK: "chainlink",
   LTC: "litecoin",
+  BCH: "bitcoin-cash",
+  SHIB: "shiba-inu",
+  UNI: "uniswap",
+  ATOM: "cosmos",
+  XLM: "stellar",
+  XMR: "monero",
+  ETC: "ethereum-classic",
+  FIL: "filecoin",
+  APT: "aptos",
+  NEAR: "near",
+  OP: "optimism",
+  ARB: "arbitrum",
+  ICP: "internet-computer",
+  VET: "vechain",
+  HBAR: "hedera-hashgraph",
+  AAVE: "aave",
 };
 
 const COMMODITY_YAHOO_SYMBOLS = {
@@ -318,6 +334,48 @@ function normalizeCryptoId(symbol, name = "") {
   return "";
 }
 
+function normalizeCryptoBase(symbol, name = "") {
+  const raw = String(symbol || "").trim();
+  const upper = raw.toUpperCase();
+  if (upper.includes("/")) return upper.split("/")[0];
+  if (upper.includes("-")) return upper.split("-")[0];
+  if (upper.includes(":")) return upper.split(":").pop().replace(/USDT$|USDC$|USD$|INR$/i, "");
+  const stripped = upper.replace(/USDT$|USDC$|USD$|INR$/i, "");
+  if (stripped) return stripped;
+  return String(name || "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function normalizeCryptoMarket(symbol) {
+  const upper = String(symbol || "").trim().toUpperCase();
+  if (upper.includes("/")) return upper.split("/")[1] || "USD";
+  if (upper.endsWith("INR")) return "INR";
+  if (upper.endsWith("USDT")) return "USDT";
+  if (upper.endsWith("USDC")) return "USDC";
+  return "USD";
+}
+
+function cryptoSymbolCandidates(holding) {
+  const lookup = String(holding.quoteSymbol || holding.symbol || "").trim();
+  const display = String(holding.symbol || lookup || "").trim();
+  const base = normalizeCryptoBase(lookup || display, holding?.name);
+  const market = normalizeCryptoMarket(lookup || display);
+  const normalizedMarket = market === "USDT" || market === "USDC" ? "USD" : market;
+  const rawUpper = lookup.toUpperCase();
+  const displayUpper = display.toUpperCase();
+  return unique([
+    base && `${base}/${normalizedMarket}`,
+    base && `${base}/USD`,
+    base && `BINANCE:${base}USDT`,
+    base && `COINBASE:${base}-USD`,
+    base && `${base}USDT`,
+    base && `${base}USD`,
+    lookup.includes("/") || lookup.includes(":") || lookup.includes("-") ? lookup : "",
+    display.includes("/") || display.includes(":") || display.includes("-") ? display : "",
+    rawUpper.includes("/") || rawUpper.includes(":") || rawUpper.includes("-") ? rawUpper : "",
+    displayUpper.includes("/") || displayUpper.includes(":") || displayUpper.includes("-") ? displayUpper : "",
+  ]).filter(Boolean);
+}
+
 function providerAvailability() {
   return {
     alphaVantage: Boolean(process.env.ALPHA_VANTAGE_API_KEY),
@@ -462,19 +520,30 @@ function canonicalIndianSymbol(holding) {
 
 function isLikelyIndianHolding(holding) {
   const symbol = String(holding?.quoteSymbol || holding?.symbol || "").toUpperCase();
-  const account = String(holding?.account || "").toLowerCase();
-  return (
+  const source = String(holding?.source || "").toLowerCase();
+  const explicitIndianSymbol =
     symbol.includes(".NS") ||
     symbol.includes(".BO") ||
     symbol.includes(".NSE") ||
     symbol.includes(".BSE") ||
     symbol.includes(":NSE") ||
-    symbol.includes(":BSE") ||
+    symbol.includes(":BSE");
+  if (explicitIndianSymbol || canonicalIndianSymbol(holding)) return true;
+  const globalSource =
+    source.includes("twelve-data") ||
+    source.includes("finnhub") ||
+    source.includes("alpha-vantage") ||
+    source.includes("alpaca") ||
+    source.includes("yahoo-finance");
+  if (globalSource || holding?.kind === "crypto" || holding?.kind === "commodity") return false;
+  const currency = String(holding?.currency || "").trim().toUpperCase();
+  if (currency === "USD") return false;
+  const account = String(holding?.account || "").toLowerCase();
+  return (
     account.includes("zerodha") ||
     account.includes("groww") ||
     account.includes("upstox") ||
-    account.includes("angel") ||
-    account.includes("indmoney")
+    account.includes("angel")
   );
 }
 
@@ -708,11 +777,13 @@ async function refreshStockHolding(holding) {
   let latest;
   let source = "";
   let resolvedSymbol = canonicalIndianSymbol(holding) || symbol;
-  const candidates = unique([
-    ...stockSymbolCandidates(resolvedSymbol),
-    ...stockSymbolCandidates(symbol),
-  ]);
   const likelyIndian = isLikelyIndianHolding(holding);
+  const candidates = likelyIndian
+    ? unique([
+        ...stockSymbolCandidates(resolvedSymbol),
+        ...stockSymbolCandidates(symbol),
+      ])
+    : unique([resolvedSymbol, symbol]).filter((candidate) => candidate && !candidate.includes(":"));
   const nonRawCandidates = candidates.filter((candidate) => candidate !== symbol || candidate.includes(".") || candidate.includes(":"));
   const failures = [];
   if (likelyIndian && candidates.some((candidate) => candidate.endsWith(".NS") || candidate.includes(":NSE") || candidate.endsWith(".NSE"))) {
@@ -798,7 +869,9 @@ async function refreshStockHolding(holding) {
     if (!finnhubResolved && !latest) failures.push("Finnhub did not return a usable quote.");
   }
   if (!latest && !likelyIndian) {
-    const yahooSymbols = unique(candidates.flatMap((candidate) => stockSymbolCandidates(candidate)).filter((candidate) => candidate.endsWith(".NS") || candidate.endsWith(".BO")));
+    const yahooSymbols = unique([resolvedSymbol, symbol, ...candidates])
+      .map((candidate) => String(candidate || "").trim().toUpperCase())
+      .filter((candidate) => candidate && !candidate.includes(":") && !candidate.endsWith(".NSE") && !candidate.endsWith(".BSE"));
     try {
       const quotes = await fetchYahooQuotes(yahooSymbols);
       const usable = Array.isArray(quotes)
@@ -823,7 +896,7 @@ async function refreshStockHolding(holding) {
     try {
       const data = await fetchAlphaJson({
         function: "TIME_SERIES_DAILY",
-        symbol,
+        symbol: resolvedSymbol,
         outputsize: "compact",
         apikey: apiKey,
       });
@@ -848,7 +921,7 @@ async function refreshStockHolding(holding) {
     currentValue,
     investedValue,
     gainLoss: currentValue - investedValue,
-    currency: likelyIndian ? "INR" : (holding.currency || "USD"),
+    currency: likelyIndian ? "INR" : "USD",
     source,
     priceLabel: source === "finnhub" ? "Latest quote" : source === "nse-official-eod" ? "Official NSE close" : "Latest close",
     refreshedAt: new Date().toISOString(),
@@ -860,62 +933,75 @@ async function refreshCryptoHolding(holding) {
   const lookupSymbol = String(holding.quoteSymbol || holding.symbol || "").trim();
   const normalizedLookup = lookupSymbol.toUpperCase();
   const displaySymbol = String(holding.symbol || lookupSymbol || "").trim().toUpperCase();
+  const candidates = cryptoSymbolCandidates(holding);
   if (!lookupSymbol) throw new Error(`Missing symbol for ${holding.name || "crypto holding"}`);
   let latest;
   let source = "";
+  let resolvedSymbol = lookupSymbol;
   const failures = [];
   if (process.env.TWELVE_DATA_API_KEY) {
-    try {
-      const data = await fetchTwelveJson("/time_series", {
-        symbol: normalizedLookup,
-        interval: "1day",
-        outputsize: 1,
-        apikey: process.env.TWELVE_DATA_API_KEY,
-      });
-      const point = Array.isArray(data?.values) ? data.values[0] : null;
-      const price = normalizeNumber(point?.close);
-      if (price) {
-        ensureFreshQuote(point?.datetime, "Twelve Data", CRYPTO_QUOTE_MAX_AGE_DAYS);
-        latest = { date: point?.datetime || "", price };
-        source = "twelve-data";
+    for (const candidate of candidates) {
+      try {
+        const data = await fetchTwelveJson("/time_series", {
+          symbol: String(candidate).toUpperCase(),
+          interval: "1day",
+          outputsize: 1,
+          apikey: process.env.TWELVE_DATA_API_KEY,
+        });
+        const point = Array.isArray(data?.values) ? data.values[0] : null;
+        const price = normalizeNumber(point?.close);
+        if (price) {
+          ensureFreshQuote(point?.datetime, "Twelve Data", CRYPTO_QUOTE_MAX_AGE_DAYS);
+          latest = { date: point?.datetime || "", price };
+          source = "twelve-data";
+          resolvedSymbol = candidate;
+          break;
+        }
+      } catch (error) {
+        failures.push(error.message || `Twelve Data failed for ${candidate}`);
       }
-    } catch (error) {
-      failures.push(error.message || "Twelve Data failed");
     }
   }
   if (!latest && process.env.FINNHUB_API_KEY) {
-    try {
-      const data = await fetchFinnhubJson("/quote", {
-        symbol: normalizedLookup,
-        token: process.env.FINNHUB_API_KEY,
-      });
-      const price = normalizeNumber(data?.c);
-      if (price) {
-        latest = { date: new Date().toISOString().slice(0, 10), price };
-        source = "finnhub";
+    for (const candidate of candidates) {
+      try {
+        const data = await fetchFinnhubJson("/quote", {
+          symbol: String(candidate).toUpperCase(),
+          token: process.env.FINNHUB_API_KEY,
+        });
+        const price = normalizeNumber(data?.c);
+        if (price) {
+          latest = { date: new Date().toISOString().slice(0, 10), price };
+          source = "finnhub";
+          resolvedSymbol = candidate;
+          break;
+        }
+      } catch (error) {
+        failures.push(error.message || `Finnhub failed for ${candidate}`);
       }
-    } catch (error) {
-      failures.push(error.message || "Finnhub failed");
     }
   }
   if (!latest && process.env.ALPHA_VANTAGE_API_KEY) {
     try {
+      const base = normalizeCryptoBase(lookupSymbol, holding?.name);
+      const market = normalizeCryptoMarket(lookupSymbol);
+      const alphaMarket = market === "USDT" || market === "USDC" ? "USD" : market;
       const data = await fetchAlphaJson({
         function: "DIGITAL_CURRENCY_DAILY",
-        symbol: normalizedLookup.split("/")[0],
-        market: normalizedLookup.split("/")[1] || "USD",
+        symbol: base || normalizedLookup.split("/")[0],
+        market: alphaMarket,
         apikey: process.env.ALPHA_VANTAGE_API_KEY,
       });
       const series = data?.["Time Series (Digital Currency Daily)"];
       if (series && typeof series === "object") {
         const [date] = Object.keys(series).sort((a, b) => new Date(b) - new Date(a));
         const point = series?.[date];
-        const market = normalizedLookup.split("/")[1] || "USD";
-        const price = normalizeNumber(point?.[`4b. close (${market})`] || point?.["4a. close (USD)"]);
+        const price = normalizeNumber(point?.[`4b. close (${alphaMarket})`] || point?.["4a. close (USD)"]);
         if (date && price) {
           ensureFreshQuote(date, "Alpha Vantage", CRYPTO_QUOTE_MAX_AGE_DAYS);
           latest = { date, price };
           source = "alpha-vantage";
+          resolvedSymbol = `${base || normalizedLookup}/${alphaMarket}`;
         }
       }
     } catch (error) {
@@ -951,7 +1037,7 @@ async function refreshCryptoHolding(holding) {
   return {
     ...holding,
     symbol: displaySymbol || normalizedLookup,
-    quoteSymbol: holding.quoteSymbol || lookupSymbol,
+    quoteSymbol: resolvedSymbol || holding.quoteSymbol || lookupSymbol,
     currentPrice: latest.price,
     priceDate: latest.date,
     currentValue,
@@ -1105,11 +1191,12 @@ export async function refreshMarketHoldings(holdings = []) {
       const investedValue = normalizeNumber(holding.investedValue || units * normalizeNumber(holding.costPerUnit));
       const preservedCurrentValue = normalizeNumber(holding.currentValue);
       const preservedCurrentPrice = normalizeNumber(holding.currentPrice);
-      const nextCurrentValue = preservedCurrentValue || 0;
+      const nextCurrentValue =
+        preservedCurrentValue || (preservedCurrentPrice > 0 ? units * preservedCurrentPrice : investedValue);
       refreshed.push({
         ...holding,
         quoteSymbol: canonicalIndianSymbol(holding) || holding.quoteSymbol || holding.symbol || "",
-        currency: holding.currency || (isLikelyIndianHolding(holding) ? "INR" : "USD"),
+        currency: isLikelyIndianHolding(holding) || holding.kind === "mutualFund" ? "INR" : "USD",
         currentPrice: preservedCurrentPrice,
         currentValue: nextCurrentValue,
         investedValue,

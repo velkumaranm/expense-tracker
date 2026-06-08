@@ -49,11 +49,24 @@ export default function NetWorthTracker({
   marketFx = marketFx || {};
   const [assetForm, setAssetForm] = useState({ name: "", type: "Cash", value: "" });
   const [liabilityForm, setLiabilityForm] = useState({ name: "", type: "Loan", value: "" });
-  const holdingCurrency = useCallback(
-    (item) =>
-      String(item?.currency || (String(item?.quoteSymbol || item?.symbol || "").toUpperCase().includes(".NS") ? "INR" : "USD")).toUpperCase(),
-    []
-  );
+  const holdingCurrency = useCallback((item) => {
+    const symbol = String(item?.quoteSymbol || item?.symbol || "").toUpperCase();
+    const source = String(item?.source || "").toLowerCase();
+    const explicit = String(item?.currency || "").toUpperCase();
+    const isIndian =
+      item?.kind === "mutualFund" ||
+      symbol.includes(".NS") ||
+      symbol.includes(".BO") ||
+      symbol.includes(".NSE") ||
+      symbol.includes(".BSE") ||
+      symbol.includes(":NSE") ||
+      symbol.includes(":BSE") ||
+      source.includes("nse-official-eod") ||
+      source.includes("mfapi");
+    if (isIndian) return "INR";
+    if (item?.kind === "stock" || item?.kind === "crypto" || item?.kind === "commodity") return "USD";
+    return explicit || "INR";
+  }, []);
   const toInr = useCallback((amount, item) => convertAmount(amount, holdingCurrency(item), "INR", marketFx), [holdingCurrency, marketFx]);
 
   const addAsset = () => {
@@ -119,6 +132,10 @@ export default function NetWorthTracker({
     });
     return Object.entries(grouped).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [holdings, toInr]);
+  const marketHoldingsValue = useMemo(
+    () => allocationByRegion.reduce((sum, item) => sum + Number(item.value || 0), 0),
+    [allocationByRegion]
+  );
   const xirrEstimate = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const flows = holdings
@@ -171,10 +188,6 @@ export default function NetWorthTracker({
     });
     return hints;
   }, [allocationByKind, holdings, language, t, toInr]);
-  const recurringInvestmentRatio = investmentTransactions.length
-    ? holdings.length / Math.max(investmentTransactions.length, 1)
-    : 0;
-
   return (
     <>
       <div className="page-header">
@@ -379,7 +392,7 @@ export default function NetWorthTracker({
                   <div className="k">{localizeKnownText(language, item.name)}</div>
                   <div className="v">{fmtINR(item.value)}</div>
                   <div className="muted">
-                    {trackedInvestments > 0 ? `${((item.value / Math.max(trackedInvestments, 1)) * 100).toFixed(1)}% ${t("wealth.ofTrackedInvestments", "of tracked investments.")}` : t("wealth.noTrackedInvestmentBase", "No tracked investment base yet.")}
+                    {marketHoldingsValue > 0 ? `${((item.value / Math.max(marketHoldingsValue, 1)) * 100).toFixed(1)}% ${t("wealth.ofMarketHoldings", "of market holdings.")}` : t("wealth.noTrackedInvestmentBase", "No tracked investment base yet.")}
                   </div>
                 </div>
               )) : (
@@ -392,7 +405,11 @@ export default function NetWorthTracker({
               <div className="mini-card">
                 <div className="k">{t("wealth.trackingDepth", "Tracking depth")}</div>
                 <div className="v">{holdings.length}</div>
-                <div className="muted">{investmentTransactions.length ? `${(recurringInvestmentRatio * 100).toFixed(0)}% ${t("wealth.trackingDepthSub", "of investment transactions are mirrored by tracked holdings.")}` : t("wealth.noInvestmentTransactions", "No investment transactions have been recorded yet.")}</div>
+                <div className="muted">
+                  {holdings.length
+                    ? `${t("wealth.cloudSyncedHoldings", "Cloud-synced market holdings.")} ${investmentTransactions.length ? `${investmentTransactions.length} ${t("wealth.investmentEntriesRecorded", "investment cash-flow entries recorded.")}` : ""}`.trim()
+                    : t("wealth.noInvestmentTransactions", "No investment transactions have been recorded yet.")}
+                </div>
               </div>
             </div>
           </div>
